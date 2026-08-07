@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ALDia - App</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a3a8a">
+    <link href="bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/all.min.css">
+    <style>
+        /* PALETA DE COLORES ARMÓNICA (CORREGIDA) */
+        :root {
+            --brand-blue: #1a3a8a; /* Tu azul principal intacto */
+            --brand-blue-hover: #122a66; /* Un tono más oscuro para botones */
+            
+            /* CLAVE: RGB de tu azul para que las opacidades funcionen perfecto */
+            --bs-primary-rgb: 26, 58, 138; 
+            
+            --bg-light: #f8fafc; 
+            --text-main: #334155; 
+            --text-muted: #64748b; 
+            
+            --success-color: #10b981; 
+            --success-bg: #d1fae5; 
+            --danger-color: #ef4444; 
+            --warning-color: #f59e0b; 
+        }
+
+        body { background-color: var(--brand-blue); color: white; font-family: 'Segoe UI', sans-serif; padding-bottom: 80px; }
+        
+        .card-custom { background: white; border-radius: 15px; color: var(--text-main); border: none; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .stat-card { padding: 20px; height: 100%; border-radius: 15px; }
+        
+        /* Tarjeta de Saldo Neto (Cristalizada para que destaque sobre tu fondo azul) */
+        .text-white.stat-card { background: rgba(255, 255, 255, 0.1) !important; border: 1px solid rgba(255, 255, 255, 0.2); }
+
+        .text-recaudado { color: var(--success-color); font-weight: bold; font-size: 1.8rem; }
+        .text-pendiente { color: var(--warning-color); font-weight: bold; font-size: 1.5rem; }
+        
+        .pago-item { background: var(--bg-light); border-radius: 12px; padding: 15px; margin-bottom: 10px; color: var(--text-main); display: flex; align-items: center; justify-content: space-between; border: 1px solid #e2e8f0; }
+        
+        .badge-ref { background-color: #e0e7ff; color: var(--brand-blue); font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; text-transform: uppercase; font-weight: bold; }
+        
+        .btn-check-pago { color: var(--success-color); background: var(--success-bg); border-radius: 50%; width: 40px; height: 40px; transition: 0.3s; cursor: pointer; display: flex; align-items: center; justify-content: center; border: none; }
+        .btn-check-pago:hover, .btn-check-pago:active { background: var(--success-color); color: white; }
+        
+        .transition { transition: all 0.3s ease; }
+        .header-click:active { transform: scale(0.98); opacity: 0.8; }
+        
+        /* Menú inferior */
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: white; border-top-left-radius: 20px; border-top-right-radius: 20px; box-shadow: 0 -5px 20px rgba(0,0,0,0.15); display: flex; justify-content: space-around; padding: 10px 0; z-index: 1000; }
+        .nav-item { color: var(--text-muted); text-align: center; text-decoration: none; font-size: 0.8rem; flex: 1; display: flex; flex-direction: column; align-items: center; transition: 0.2s; }
+        .nav-item.active { color: var(--brand-blue); font-weight: bold; }
+        .nav-item i { font-size: 1.4rem; margin-bottom: 2px; }
+        
+        /* Pantallas ocultas por defecto */
+        .pantalla { display: none; }
+        .pantalla.activa { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* ==========================================
+           REEMPLAZO DE COLORES BOOTSTRAP CORREGIDO
+        ========================================== */
+        .text-primary { color: var(--brand-blue) !important; }
+        .text-success { color: var(--success-color) !important; }
+        .text-danger { color: var(--danger-color) !important; }
+        .text-muted { color: var(--text-muted) !important; }
+        .text-dark { color: var(--text-main) !important; }
+        
+        .bg-light { background-color: var(--bg-light) !important; }
+        
+        /* Botones principales con tu azul */
+        .btn-primary { background-color: var(--brand-blue); border-color: var(--brand-blue); }
+        .btn-primary:hover { background-color: var(--brand-blue-hover); border-color: var(--brand-blue-hover); }
+        
+        .btn-outline-primary { color: var(--brand-blue); border-color: var(--brand-blue); }
+        .btn-outline-primary:hover { background-color: var(--brand-blue); color: white; }
+        
+    </style>
+</head>
+<body>
+
+<div class="container py-4 pantalla activa" id="vista-dashboard">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold m-0">💰 ALDia</h2>
+        <div class="d-flex align-items-center bg-primary rounded-pill shadow-sm overflow-hidden">
+            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i></button>
+            <div class="px-2 py-1 small fw-bold" id="mes-actual-display" style="min-width: 100px; text-align: center;">Cargando...</div>
+            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(1)"><i class="fas fa-chevron-right"></i></button>
+        </div>
+    </div>
+
+    <div class="row g-2 mb-4">
+        <div class="col-6">
+            <div class="card-custom p-3 h-100 d-flex flex-column justify-content-center align-items-center text-center shadow-sm">
+                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Ingresos del Mes</small>
+                <div class="text-success fw-bold mt-1" style="font-size: 1.4rem;" id="total-ingresos">S/ 0.00</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card-custom p-3 h-100 d-flex flex-column justify-content-center align-items-center text-center shadow-sm">
+                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Egresos del Mes</small>
+                <div class="text-danger fw-bold mt-1" style="font-size: 1.4rem;" id="total-egresos">S/ 0.00</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card-custom stat-card d-flex flex-column justify-content-center align-items-center text-center p-3 shadow-sm bg-primary text-white transition" onclick="navegar('estadisticas')">
+                <small class="text-white-50 mb-1 text-uppercase fw-bold" style="font-size: 0.75rem;">Saldo Neto</small>
+                <div class="fs-4 fw-bold" id="saldo-mes">S/ 0.00</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card-custom stat-card d-flex flex-column justify-content-center align-items-center text-center p-3 shadow-sm">
+                <small class="text-muted mb-1 text-uppercase fw-bold" style="font-size: 0.75rem;">Por Cobrar</small>
+                <div class="text-warning fw-bold fs-4" id="saldo-pendiente">S/ 0.00</div>
+            </div>
+        </div>
+    </div>
+
+    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-primary"><i class="fas fa-hand-holding-usd me-2"></i>Pendientes de Cobro</h5>
+    <div class="mb-4" id="lista-pendientes"></div>
+
+    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-success"><i class="fas fa-arrow-down me-2"></i>Ingresos Este Mes</h5>
+    <div class="mb-4" id="lista-pagados"></div>
+
+    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-danger"><i class="fas fa-arrow-up me-2"></i>Egresos Este Mes</h5>
+    <div class="mb-4" id="lista-egresos"></div>
+</div>
+    <div id="seccion-proximos" class="mt-4 d-none">
+    <h5 class="mb-3 text-uppercase small opacity-75">Próximos a Cobrar (<span id="titulo-mes-proximo"></span>)</h5>
+    <div id="lista-proximos"></div>
+</div>
+</div>
+
+<div class="container py-4 pantalla" id="vista-nuevo">
+    <h3 class="fw-bold mb-4">Registrar</h3>
+    
+    <ul class="nav nav-pills nav-fill mb-4 bg-white rounded-pill shadow-sm p-1" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a class="nav-link active rounded-pill fw-bold" id="tab-cliente" data-bs-toggle="pill" href="#form-cliente" role="tab">Nuevo Cliente</a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link rounded-pill fw-bold text-danger" id="tab-egreso" data-bs-toggle="pill" href="#form-egreso" role="tab">Nuevo Egreso</a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active card-custom p-4 shadow-sm" id="form-cliente" role="tabpanel">
+            <form id="form-nuevo-cliente">
+            
+            <div class="mb-4">
+                <label class="form-label text-muted small fw-bold text-center d-block">¿Qué le estás alquilando?</label>
+                <div class="btn-group w-100 shadow-sm" role="group">
+                    <input type="radio" class="btn-check" name="tipo_servicio" id="tipo-cuarto" value="cuarto" autocomplete="off" checked onchange="toggleTipoServicio()">
+                    <label class="btn btn-outline-primary fw-bold" for="tipo-cuarto"><i class="fas fa-home me-2"></i>Cuarto</label>
+
+                    <input type="radio" class="btn-check" name="tipo_servicio" id="tipo-streaming" value="streaming" autocomplete="off" onchange="toggleTipoServicio()">
+                    <label class="btn btn-outline-primary fw-bold" for="tipo-streaming"><i class="fas fa-tv me-2"></i>Streaming</label>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label text-muted small fw-bold">Nombre</label>
+                <input type="text" class="form-control" id="cli-nombre" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-muted small fw-bold">Apellido</label>
+                <input type="text" class="form-control" id="cli-apellido">
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-muted small fw-bold">Monto Mensual (S/)</label>
+                <input type="number" step="0.01" class="form-control" id="cli-monto" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-muted small fw-bold">Fecha del Primer Cobro</label>
+                <input type="date" class="form-control" id="cli-fecha-inicio" required>
+            </div>
+            <div class="mb-4">
+                <label class="form-label text-muted small fw-bold" id="lbl-referencia">Referencia (Ej: Cuarto 301)</label>
+                <input type="text" class="form-control" id="cli-ref">
+            </div>
+
+            <div class="card bg-light border-0 mb-3 p-3 rounded-4" id="bloque-garantia">
+                
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="chk-tiene-garantia" onchange="toggleOpcionesGarantia()">
+                    <label class="form-check-label fw-bold text-dark" for="chk-tiene-garantia" style="font-size: 0.85rem;"><i class="fas fa-shield-alt me-2 text-primary"></i>¿Aplica Depósito de Garantía?</label>
+                </div>
+
+                <div id="opciones-garantia" class="d-none mt-3 pt-3 border-top border-secondary border-opacity-25">
+                    <div class="mb-3">
+                        <label class="form-label text-muted small fw-bold">Monto de Garantía (S/)</label>
+                        <input type="number" step="0.01" class="form-control form-control-sm" id="cli-garantia-monto" placeholder="0.00">
+                    </div>
+
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="chk-garantia-pagada" onchange="toggleFechaGarantia()">
+                        <label class="form-check-label small fw-bold text-dark" for="chk-garantia-pagada">¿Garantía ya pagada?</label>
+                    </div>
+
+                    <div id="div-fecha-garantia" class="mt-2">
+                        <label class="form-label text-muted small fw-bold">¿Cuándo cobrará la garantía?</label>
+                        <input type="date" class="form-control form-control-sm" id="cli-garantia-fecha">
+                        <div class="form-text" style="font-size: 0.65rem;">Si no la pagó hoy, indica la fecha en que aparecerá como pendiente.</div>
+                    </div>
+                </div>
+                
+            </div>
+
+            <div class="card bg-light border-0 mb-4 p-3 rounded-4">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="chk-pago-inicial" onchange="toggleMetodoPagoInicial()">
+                        <label class="form-check-label small fw-bold text-dark" for="chk-pago-inicial">¿Ya pagó su primera cuota?</label>
+                    </div>
+                    
+                    <div id="opciones-pago-inicial" class="d-none mt-2 pt-2 border-top">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">¿Cuántas cuotas (meses) paga por adelantado?</label>
+                            <input type="number" class="form-control form-control-sm" id="cli-cuotas-adelanto" value="1" min="1" step="1">
+                        </div>
+                        
+                        <label class="form-label small fw-bold text-muted mb-2">Método de Pago:</label>
+                        <div class="d-grid gap-2">
+                            <input type="radio" class="btn-check" name="metodo_pago_inicial" id="opt-ini-1" value="Efectivo" checked>
+                            <label class="btn btn-outline-success btn-sm text-start" for="opt-ini-1"><i class="fas fa-money-bill-wave me-2"></i> Efectivo</label>
+                            <input type="radio" class="btn-check" name="metodo_pago_inicial" id="opt-ini-2" value="Yape/Plin">
+                            <label class="btn btn-outline-success btn-sm text-start" for="opt-ini-2"><i class="fas fa-mobile-alt me-2"></i> Yape / Plin</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success w-100 py-2 fw-bold rounded-pill shadow-sm">Guardar Cliente</button>
+            </form>
+        </div>
+
+        <div class="tab-pane fade card-custom p-4 shadow-sm border border-danger border-opacity-25" id="form-egreso" role="tabpanel">
+            <form id="form-nuevo-egreso">
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">Fecha del Gasto</label>
+                    <input type="date" class="form-control" id="egr-fecha" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">Motivo / Descripción</label>
+                    <input type="text" class="form-control" id="egr-motivo" placeholder="Ej: Pago de luz, materiales..." required>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label text-muted small fw-bold">Monto del Egreso (S/)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-danger text-white border-danger fw-bold">S/</span>
+                        <input type="number" step="0.01" min="0.1" class="form-control border-danger" id="egr-monto" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-danger w-100 py-2 fw-bold rounded-pill shadow-sm"><i class="fas fa-minus-circle me-2"></i>Registrar Gasto</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="container py-4 pantalla" id="vista-calendario">
+    <div class="d-flex align-items-center mb-4 gap-3">
+        <a href="#" class="btn btn-light rounded-circle shadow-sm" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" onclick="navegar('dashboard')">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <h3 class="fw-bold m-0">Agenda de Cobros</h3>
+    </div>
+    
+    <div class="card-custom p-3 shadow-sm mb-4 text-center">
+        <h5 class="fw-bold text-primary m-0" id="calendario-mes-titulo">Mes</h5>
+    </div>
+
+    <div id="lista-agenda">
+        <div class="text-center text-white-50 my-3"><small><i class="fas fa-spinner fa-spin"></i> Cargando agenda...</small></div>
+    </div>
+</div>
+
+<div class="container py-4 pantalla" id="vista-estadisticas">
+    <h3 class="fw-bold mb-1">Historial Financiero</h3>
+    <p class="text-muted small mb-4">Resumen de ingresos y egresos por mes.</p>
+    
+    <div id="lista-historial-agrupado" class="mb-4"></div>
+</div>
+
+<div class="container py-4 pantalla" id="vista-gestion">
+    <h3 class="fw-bold mb-4">Gestión</h3>
+    
+    <div class="card-custom p-4 border border-success border-2 mb-4" style="background-color: #f0fdf4;">
+        <h5 class="fw-bold text-primary mb-3"><i class="fas fa-database me-2"></i>Gestión de Datos</h5>
+        <div class="mb-4">
+            <h6 class="fw-bold text-dark small">Crear Copia de Seguridad</h6>
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chk-export-clientes" checked>
+                        <label class="form-check-label" for="chk-export-clientes">Clientes</label>
+                    </div>
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chk-export-pagos" checked>
+                        <label class="form-check-label" for="chk-export-pagos">Pagos</label>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chk-export-egresos" checked>
+                        <label class="form-check-label" for="chk-export-egresos">Egresos</label>
+                    </div>
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chk-export-apuntes" checked>
+                        <label class="form-check-label" for="chk-export-apuntes">Apuntes</label>
+                    </div>
+                </div>
+            </div>
+            <button onclick="exportarDatos()" class="btn btn-success fw-bold w-100 rounded-pill"><i class="fas fa-download me-2"></i>Descargar Backup (.json)</button>
+        </div>
+
+        <hr class="opacity-25">
+
+        <div class="mt-3">
+            <h6 class="fw-bold text-dark small">Restaurar Información</h6>
+            <p class="text-muted" style="font-size: 0.7rem;">Selecciona un archivo .json para recuperar tus datos.</p>
+            <input type="file" id="input-importar" accept=".json" class="d-none" onchange="procesarImportacion(event)">
+            <button onclick="document.getElementById('input-importar').click()" class="btn btn-outline-primary fw-bold w-100 rounded-pill"><i class="fas fa-upload me-2"></i>Subir Archivo de Respaldo</button>
+        </div>
+    </div>
+    <div class="card-custom p-4 border border-warning border-2 mb-4" style="background-color: #fffbeb;">
+        <h5 class="text-warning fw-bold mb-3" style="color: #d97706 !important;"><i class="fas fa-life-ring me-2"></i> Salvavidas</h5>
+        <p class="text-muted small mb-3">Si eliminaste a un cliente o borraste un historial por error y el aviso desapareció, usa este botón para regresar el tiempo a la última acción.</p>
+        <button onclick="ejecutarDeshacerManual()" class="btn btn-warning fw-bold w-100 text-dark"><i class="fas fa-undo me-2"></i> Deshacer Último Borrado</button>
+    </div>
+    <div class="card-custom p-4 border border-danger border-2 text-center" style="background-color: #fff5f5;">
+        <h5 class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-2"></i> Zona de Peligro</h5>
+        
+        <p class="text-muted small mb-3 mt-3">Borrará el historial de recibos y pondrá el contador en S/ 0.00.</p>
+        <button onclick="reiniciarTotales()" class="btn btn-danger fw-bold px-4 mb-4 w-100"><i class="fas fa-trash-alt me-2"></i> Reiniciar Total a Cero</button>
+        
+        <hr class="border-danger opacity-25 my-4">
+        
+        <p class="text-muted small mb-3"><b>ELIMINARÁ A TODOS LOS CLIENTES</b> y sus deudas pendientes.</p>
+        <button onclick="borrarTodosLosClientes()" class="btn btn-outline-danger fw-bold px-4 w-100"><i class="fas fa-users-slash me-2"></i> Borrar Todos los Clientes</button>
+    </div>
+</div>
+
+<div class="container py-4 pantalla" id="vista-apuntes">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold m-0">Mis Apuntes</h3>
+        <button class="btn btn-light rounded-pill px-3 shadow-sm fw-bold text-primary" onclick="crearNuevoApunte()">
+            <i class="fas fa-plus me-1"></i> Nueva Lista
+        </button>
+    </div>
+    
+    <div id="contenedor-apuntes">
+        </div>
+</div>
+
+<div class="bottom-nav">
+    <a href="#" class="nav-item active" id="nav-dashboard" onclick="navegar('dashboard')">
+        <i class="fas fa-home"></i><span>Inicio</span>
+    </a>
+    <a href="#" class="nav-item" id="nav-nuevo" onclick="navegar('nuevo')">
+        <i class="fas fa-plus-circle text-success" style="font-size: 1.8rem; margin-top: -5px;"></i>
+        <span class="text-success fw-bold">Nuevo</span>
+    </a>
+    <a href="#" class="nav-item" id="nav-apuntes" onclick="navegar('apuntes')">
+        <i class="fas fa-clipboard-list"></i><span>Apuntes</span>
+    </a>
+    <a href="#" class="nav-item" id="nav-estadisticas" onclick="navegar('estadisticas')">
+        <i class="fas fa-history"></i><span>Historial</span>
+    </a>
+    <a href="#" class="nav-item" id="nav-gestion" onclick="navegar('gestion')">
+        <i class="fas fa-cog"></i><span>Gestión</span>
+    </a>
+</div>
+
+<div class="modal fade" id="modalCobro" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-dark">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">Confirmar Pago</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="msgConfirmacion" class="mb-4"></p>
+                <input type="hidden" id="pago-id-actual">
+                <label class="form-label small fw-bold text-muted">Método de Pago:</label>
+                <div class="d-grid gap-2">
+                    <input type="radio" class="btn-check" name="metodo_pago" id="opt1" value="Efectivo" checked>
+                    <label class="btn btn-outline-primary text-start" for="opt1"><i class="fas fa-money-bill-wave me-2"></i> Efectivo</label>
+                    <input type="radio" class="btn-check" name="metodo_pago" id="opt2" value="Yape/Plin">
+                    <label class="btn btn-outline-primary text-start" for="opt2"><i class="fas fa-mobile-alt me-2"></i> Billetera Digital</label>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-success px-4" onclick="procesarPago()">Registrar Pago</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNuevoApunte" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-dark">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">Crear Nueva Lista</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">Nombre de la lista</label>
+                    <input type="text" class="form-control" id="nuevo-apunte-titulo" placeholder="Ej: Mercado, Viaje, Tareas">
+                </div>
+                <label class="form-label small fw-bold text-muted">Tipo de lista</label>
+                <div class="d-grid gap-2">
+                    <input type="radio" class="btn-check" name="tipo_apunte" id="tipo_simple" value="simple" checked>
+                    <label class="btn btn-outline-primary text-start" for="tipo_simple"><i class="fas fa-list-ul me-2"></i> Lista Simple (Solo apuntes)</label>
+
+                    <input type="radio" class="btn-check" name="tipo_apunte" id="tipo_cuentas" value="cuentas">
+                    <label class="btn btn-outline-primary text-start" for="tipo_cuentas"><i class="fas fa-calculator me-2"></i> Lista de Cuentas (Con sumas)</label>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-success px-4" onclick="guardarNuevoApunte()">Crear Lista</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalBajaCliente" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-dark">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-danger" id="modal-baja-titulo"><i class="fas fa-sign-out-alt me-2"></i>Retirar Inquilino</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="baja-cliente-id">
+                <h6 class="fw-bold mb-3" id="baja-nombre-cliente">Nombre del Cliente</h6>
+                
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-bold text-primary" data-bs-toggle="tab" data-bs-target="#tab-mudanza" type="button" id="tab-baja-principal">🚪 Dar de Baja</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tab-error" type="button">🗑️ Borrar por Error</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="tab-mudanza">
+                        
+                        <div id="baja-seccion-prorrateo" class="alert alert-primary bg-opacity-10 border-primary border-opacity-25 p-3 mb-3">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="small fw-bold">Mensualidad normal:</span>
+                                <span class="small fw-bold" id="baja-monto-normal">S/ 0.00</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="small fw-bold">Días transcurridos del mes:</span>
+                                <span class="small fw-bold text-primary" id="baja-dias-uso">0 días</span>
+                            </div>
+                            <hr class="my-2 border-primary opacity-25">
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold text-dark mb-1">Alquiler a cobrar por estos días (S/)</label>
+                                <input type="number" step="0.01" class="form-control form-control-sm border-primary fw-bold text-primary" id="baja-monto-cobrar">
+                            </div>
+                        </div>
+
+                        <div id="baja-seccion-streaming" class="alert alert-dark bg-opacity-10 border-dark border-opacity-25 p-3 mb-3 d-none text-center">
+                            <i class="fas fa-tv fs-2 text-dark mb-2 opacity-50"></i>
+                            <p class="small text-dark mb-0 fw-bold">Se cancelará esta suscripción.</p>
+                            <p class="small text-muted mt-1 mb-0" style="font-size: 0.75rem;">El cliente pasará al archivo, su historial de pagos se mantendrá intacto y ya no generará nuevas deudas futuras.</p>
+                        </div>
+
+                        <div class="card bg-light border-0 p-3 rounded-3 mb-3" id="baja-seccion-garantia">
+                            <h6 class="fw-bold text-dark mb-2" style="font-size: 0.8rem;"><i class="fas fa-shield-alt me-1 text-secondary"></i> Devolución de Garantía</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="small text-muted">Garantía entregada:</span>
+                                <span class="small fw-bold" id="baja-garantia-total">S/ 0.00</span>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-bold text-dark mb-1">Descuento por daños/deudas (S/)</label>
+                                <input type="number" step="0.01" class="form-control form-control-sm text-danger" id="baja-garantia-descuento" value="0" oninput="calcularGarantiaDevolver()">
+                            </div>
+                            <div class="d-flex justify-content-between mt-2 pt-2 border-top border-secondary border-opacity-25">
+                                <span class="fw-bold text-dark">Garantía a Devolver:</span>
+                                <span class="fw-bold text-success fs-5" id="baja-garantia-devolver">S/ 0.00</span>
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn btn-primary w-100 fw-bold" id="btn-confirmar-baja" onclick="procesarMudanza()">Confirmar</button>
+                    </div>
+
+                    <div class="tab-pane fade" id="tab-error">
+                        <div class="alert alert-danger bg-opacity-10 border-danger border-opacity-25 p-3 text-center">
+                            <i class="fas fa-exclamation-triangle text-danger fs-1 mb-2"></i>
+                            <p class="small text-dark mb-0">Esta opción borrará al cliente y <b>eliminará todos sus recibos del historial</b>. Úsalo solo si creaste este cliente por error o era una prueba.</p>
+                        </div>
+                        <button type="button" class="btn btn-danger w-100 fw-bold mt-2" onclick="procesarEliminacionRastro()"><i class="fas fa-trash me-2"></i>Eliminar Todo Rastro</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast-deshacer" class="position-fixed start-50 translate-middle-x" style="bottom: 80px; z-index: 2000; display: none; width: 90%; max-width: 400px;">
+    <div class="bg-dark text-white rounded-pill shadow-lg d-flex align-items-center justify-content-between px-3 py-2" style="opacity: 0.95;">
+        <span id="toast-msg" class="small fw-bold text-truncate me-2">Acción realizada.</span>
+        <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-warning rounded-pill fw-bold px-3" onclick="ejecutarDeshacer()">Deshacer</button>
+            <button class="btn btn-sm text-white-50 p-0 m-0 border-0" onclick="cerrarToast()"><i class="fas fa-times fs-5"></i></button>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditarItem" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-dark">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold text-primary"><i class="fas fa-edit me-2"></i>Editar Apunte</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-apunte-id">
+                <input type="hidden" id="edit-item-id">
+                <input type="hidden" id="edit-es-cuentas">
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">Descripción / Nombre</label>
+                    <input type="text" class="form-control" id="edit-item-texto" placeholder="Ej: Gaseosa">
+                </div>
+
+                <div id="edit-item-cuentas-container" class="row g-2">
+                    <div class="col-4">
+                        <label class="form-label small fw-bold text-muted">Cantidad</label>
+                        <input type="number" step="1" min="1" class="form-control text-center" id="edit-item-cant">
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label small fw-bold text-muted">Precio Unitario (S/)</label>
+                        <input type="number" step="0.01" class="form-control" id="edit-item-valor">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-primary w-100 fw-bold rounded-pill" onclick="guardarEdicionItem()">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="bootstrap.bundle.min.js"></script>
+
+<script src="app.js"></script>
+<!-- MODAL DE CARGA DE BACKUP -->
+<div class="modal fade" id="modalCargaBackup" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-body text-center p-5">
+                <!-- Ícono animado (con ID para cambiarlo luego) -->
+                <i class="fas fa-spinner fa-spin text-success mb-3" id="icono-backup" style="font-size: 3rem;"></i>
+                
+                <!-- Textos (con IDs para actualizarlos) -->
+                <h5 class="fw-bold text-dark" id="titulo-backup">Preparando tu respaldo...</h5>
+                <p class="text-muted small mb-4" id="texto-backup">Empaquetando clientes, pagos y apuntes de forma segura.</p>
+                
+                <!-- Barra de progreso -->
+                <div class="progress mb-4" style="height: 25px; border-radius: 15px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success fw-bold text-white fs-6" 
+                         id="barra-progreso-backup" role="progressbar" 
+                         style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+
+                <!-- Botón Aceptar (Oculto inicialmente) -->
+                <button class="btn btn-success fw-bold px-5 d-none" id="btn-cerrar-backup" onclick="cerrarModalBackup()">Aceptar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL EDITAR CLIENTE -->
+<div class="modal fade" id="modalEditarCliente" data-bs-backdrop="static" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white border-0">
+                <h5 class="modal-title fw-bold"><i class="fas fa-user-edit me-2"></i> Editar Cliente</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="form-editar-cliente" onsubmit="guardarEdicionCliente(event)">
+                    <!-- ID oculto para saber a quién editamos -->
+                    <input type="hidden" id="edit-cli-id">
+                    
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted">Nombre</label>
+                            <input type="text" class="form-control bg-light border-0" id="edit-cli-nombre" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted">Apellido</label>
+                            <input type="text" class="form-control bg-light border-0" id="edit-cli-apellido">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">Monto Mensual (S/)</label>
+                        <input type="number" step="0.01" min="1" class="form-control bg-light border-0 fs-5 fw-bold text-success" id="edit-cli-monto" required>
+                        <small class="text-muted" style="font-size: 0.7rem;">Este cambio solo afectará a los pagos pendientes y futuros.</small>
+                    </div>
+                    
+                    <div class="row g-2 mb-4">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted">Día de Cobro</label>
+                            <input type="number" min="1" max="31" class="form-control bg-light border-0" id="edit-cli-dia" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted">Referencia</label>
+                            <input type="text" class="form-control bg-light border-0" id="edit-cli-ref" placeholder="Ej: Cuarto 301">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary fw-bold w-100 py-2"><i class="fas fa-save me-2"></i> Guardar Cambios</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

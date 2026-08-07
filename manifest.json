@@ -1,0 +1,17 @@
+{
+  "name": "ALDia - Gestión de Cobros",
+  "short_name": "ALDia",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a3a8a",
+  "theme_color": "#1a3a8a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icono.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
