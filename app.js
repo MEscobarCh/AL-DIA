@@ -1,22 +1,224 @@
-// Configuración de Fechas
+// ==========================================
+// --- CONFIGURACIÓN DE FIREBASE ---
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyC5S_UQgSPsvpl2Q7TFtKZi3QZMJRD2Ldc",
+  authDomain: "al-dia-app-4579a.firebaseapp.com",
+  projectId: "al-dia-app-4579a",
+  storageBucket: "al-dia-app-4579a.firebasestorage.app",
+  messagingSenderId: "361360422054",
+  appId: "1:361360422054:web:89356a5801bad33465f067"
+};
+
+// Inicializar Firebase
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const provider = new firebase.auth.GoogleAuthProvider();
+
+// Inicializar Base de Datos
+const db = firebase.firestore();
+
+// Encender la persistencia Offline (El Modo Híbrido)
+db.enablePersistence()
+  .catch((err) => {
+      console.warn("Aviso de persistencia:", err.code);
+  });
+
+// ==========================================
+// --- LÓGICA DE AUTENTICACIÓN ---
+// ==========================================
+function iniciarSesionGoogle() {
+    auth.signInWithPopup(provider).catch(error => {
+        alert("Error al iniciar sesión: " + error.message);
+    });
+}
+
+function cerrarSesion() {
+    if(confirm("¿Seguro que deseas cerrar sesión? Tus datos locales seguirán aquí.")) {
+        auth.signOut();
+    }
+}
+
+// ==========================================
+// --- SINCRONIZACIÓN EN TIEMPO REAL ---
+// ==========================================
+let unsubscribeClientes = null;
+let unsubscribePagos = null;
+let unsubscribeEgresos = null;
+let unsubscribeApuntes = null;
+
+function iniciarSincronizacion() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const userRef = db.collection('usuarios').doc(user.uid);
+
+    // 1. Escuchar Clientes
+    unsubscribeClientes = userRef.collection('clientes').onSnapshot(snapshot => {
+        let clientes = [];
+        snapshot.forEach(doc => clientes.push(doc.data()));
+        localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+        generarDeudasDelMes(); // Chequea deudas nuevas con los datos frescos
+        renderizarDashboard();
+    });
+
+    // 2. Escuchar Pagos
+    unsubscribePagos = userRef.collection('pagos').onSnapshot(snapshot => {
+        let pagos = [];
+        snapshot.forEach(doc => pagos.push(doc.data()));
+        localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+        renderizarDashboard();
+        if (typeof renderizarEstadisticas === "function") renderizarEstadisticas();
+    });
+
+    // 3. Escuchar Egresos
+    unsubscribeEgresos = userRef.collection('egresos').onSnapshot(snapshot => {
+        let egresos = [];
+        snapshot.forEach(doc => egresos.push(doc.data()));
+        localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+        renderizarDashboard();
+        if (typeof renderizarEstadisticas === "function") renderizarEstadisticas();
+    });
+
+    // 4. Escuchar Apuntes
+    unsubscribeApuntes = userRef.collection('apuntes').onSnapshot(snapshot => {
+        let apuntes = [];
+        snapshot.forEach(doc => apuntes.push(doc.data()));
+        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+        if (typeof renderizarApuntes === "function") renderizarApuntes();
+    });
+}
+
+function detenerSincronizacion() {
+    if(unsubscribeClientes) unsubscribeClientes();
+    if(unsubscribePagos) unsubscribePagos();
+    if(unsubscribeEgresos) unsubscribeEgresos();
+    if(unsubscribeApuntes) unsubscribeApuntes();
+}
+
+// ==========================================
+// --- LÓGICA DE AUTENTICACIÓN Y MOTOR DUAL ---
+// ==========================================
+let modoInvitado = false;
+
+function entrarComoInvitado() {
+    modoInvitado = true;
+    const pantallaLogin = document.getElementById('pantalla-login');
+    const appPrincipal = document.getElementById('app-principal');
+    
+    if(pantallaLogin && appPrincipal) {
+        pantallaLogin.classList.add('d-none');
+        appPrincipal.classList.remove('d-none');
+    }
+    
+    // Arrancamos inicializando la base de datos local y dibujando la pantalla
+    if (typeof iniciarBaseDeDatos === "function") iniciarBaseDeDatos(); 
+    renderizarDashboard();
+    
+    // Mostramos la alerta visual de "Modo Offline" (Lo crearemos en la interfaz luego)
+    mostrarAlertaOffline(true);
+    let seccionCuenta = document.getElementById('seccion-cuenta-gestion');
+    if (seccionCuenta) seccionCuenta.classList.add('d-none');
+}
+
+// Fusión Silenciosa (Opción 1)
+async function fusionarDatosLocalesALaNube(user) {
+    let clientesLocales = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    let pagosLocales = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let egresosLocales = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+    let apuntesLocales = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+
+    // Si la memoria local está vacía, no hay nada que fusionar
+    if (clientesLocales.length === 0 && pagosLocales.length === 0 && egresosLocales.length === 0 && apuntesLocales.length === 0) {
+        return; 
+    }
+
+    console.log("Fusión Silenciosa: Subiendo datos locales a la nube...");
+    let dbUser = db.collection('usuarios').doc(user.uid);
+    let operaciones = [];
+
+    // Empaquetamos todo para enviarlo de golpe (Batch)
+    clientesLocales.forEach(c => operaciones.push({ col: 'clientes', id: c.id.toString(), doc: c }));
+    pagosLocales.forEach(p => operaciones.push({ col: 'pagos', id: p.id.toString(), doc: p }));
+    egresosLocales.forEach(e => operaciones.push({ col: 'egresos', id: e.id.toString(), doc: e }));
+    apuntesLocales.forEach(a => operaciones.push({ col: 'apuntes', id: a.id.toString(), doc: a }));
+
+    for (let i = 0; i < operaciones.length; i += 400) {
+        let chunk = operaciones.slice(i, i + 400);
+        let batch = db.batch();
+        
+        chunk.forEach(op => {
+            let docRef = dbUser.collection(op.col).doc(op.id);
+            batch.set(docRef, op.doc, { merge: true }); // Merge protege datos existentes
+        });
+        
+        await batch.commit();
+    }
+    console.log("Fusión Silenciosa completada con éxito.");
+}
+
+// Observador de Estado Actualizado
+auth.onAuthStateChanged(async (user) => {
+    const pantallaLogin = document.getElementById('pantalla-login');
+    const appPrincipal = document.getElementById('app-principal');
+    
+    if (user) {
+        modoInvitado = false; // Apagamos el modo invitado
+        mostrarAlertaOffline(false); // Ocultamos la alerta de vulnerabilidad
+
+        if(pantallaLogin && appPrincipal) {
+            pantallaLogin.classList.add('d-none');
+            appPrincipal.classList.remove('d-none');
+        }
+        
+        // Ejecutamos la fusión silenciosa ANTES de encender los micrófonos de la nube
+        await fusionarDatosLocalesALaNube(user);
+        
+        iniciarSincronizacion(); 
+    } else {
+        // Solo regresamos a la pantalla de login si NO estamos en modo invitado
+        if (!modoInvitado) {
+            if(pantallaLogin && appPrincipal) {
+                pantallaLogin.classList.remove('d-none');
+                appPrincipal.classList.add('d-none');
+            }
+            detenerSincronizacion(); 
+        }
+    }
+    let seccionCuenta = document.getElementById('seccion-cuenta-gestion');
+    if (seccionCuenta) seccionCuenta.classList.remove('d-none');
+});
+
+function mostrarAlertaOffline(mostrar) {
+    // Prepararemos el banner visual en la próxima etapa.
+    let banner = document.getElementById('banner-offline');
+    if (banner) {
+        banner.style.display = mostrar ? 'block' : 'none';
+    }
+}
+
+// ==========================================
+// --- CONFIGURACIÓN DE FECHAS E INICIO ---
+// ==========================================
 const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const hoy = new Date();
 const mesActual = hoy.getMonth() + 1; // 1-12
 const añoActual = hoy.getFullYear();
 
-// Inicialización de la App
+let mesVisualizado = mesActual;
+let añoVisualizado = añoActual;
+
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('mes-actual-display').innerHTML = `<i class="fas fa-calendar-alt me-2"></i> ${meses[mesActual - 1]} ${añoActual}`;
-    iniciarBaseDeDatos();
-    generarDeudasDelMes();
-    renderizarDashboard();
     
     // Configurar formularios
-    document.getElementById('form-nuevo-cliente').addEventListener('submit', guardarNuevoCliente);
+    let formNuevoCli = document.getElementById('form-nuevo-cliente');
+    if(formNuevoCli) formNuevoCli.addEventListener('submit', guardarNuevoCliente);
+    
     let formEgreso = document.getElementById('form-nuevo-egreso');
     if(formEgreso) formEgreso.addEventListener('submit', guardarNuevoEgreso);
+    
+    // NOTA: iniciarBaseDeDatos y renderizarDashboard se mudaron al onAuthStateChanged
 });
-
 // --- BASE DE DATOS LOCAL ---
 function iniciarBaseDeDatos() {
     if (!localStorage.getItem('aldia_clientes')) {
@@ -35,48 +237,6 @@ function iniciarBaseDeDatos() {
         localStorage.setItem('aldia_egresos', JSON.stringify([]));
     }
 }
-
-// --- RELOJ AUTOMÁTICO (Genera nuevas cuotas) ---
-// --- RELOJ AUTOMÁTICO (Genera nuevas cuotas evaluando fechas futuras) ---
-// --- RELOJ AUTOMÁTICO (Solo genera para el mes real actual) ---
-function generarDeudasDelMes() {
-    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    let cambios = false;
-
-    clientes.forEach(cli => {
-        if (cli.activo) {
-            let tocaCobrar = true; 
-            
-            if (cli.fecha_inicio) {
-                let [anioIni, mesIni, diaIni] = cli.fecha_inicio.split('-').map(Number);
-                // IMPORTANTE: Volvemos a calcular solo en base al mes y año REAL actual
-                tocaCobrar = (añoActual > anioIni) || (añoActual === anioIni && mesActual >= mesIni);
-            }
-
-            if (tocaCobrar) {
-                // Solo creamos el registro si estamos en el mes real
-                let pagoExiste = pagos.find(p => p.cliente_id === cli.id && p.mes === mesActual && p.año === añoActual);
-                if (!pagoExiste) {
-                    pagos.push({
-                        id: Date.now() + Math.floor(Math.random() * 1000),
-                        cliente_id: cli.id,
-                        mes: mesActual,
-                        año: añoActual,
-                        monto: cli.monto,
-                        pagado: false,
-                        metodo: "",
-                        historico: `${cli.nombre} ${cli.apellido}`.trim()
-                    });
-                    cambios = true;
-                }
-            }
-        }
-    });
-
-    if (cambios) localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-}
-
 // --- RENDERIZADO DEL DASHBOARD (Con Proyección Inteligente) ---
 // --- RENDERIZADO DEL DASHBOARD ---
 function renderizarDashboard() {
@@ -129,7 +289,26 @@ function renderizarDashboard() {
             if (pago && pago.pagado) {
                 totalIngresos += parseFloat(pago.monto);
                 
-                // --- SECCIÓN: YA PAGADOS (Sin lápiz de edición) ---
+                // --- NUEVO: Mostrar días restantes en tarjetas pagadas ---
+                let textoRenovacion = "";
+                
+                if (cliente.tipo_servicio === 'streaming') {
+                    if (esMesActualReal) {
+                        let fechaCorte = new Date(añoActual, mesActual, cliente.dia); 
+                        let fechaHoyObj = new Date(añoActual, mesActual - 1, diaHoy);
+                        let diffTime = fechaCorte - fechaHoyObj;
+                        let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        textoRenovacion = `<small class="text-info fw-bold d-block mt-1" style="font-size: 0.75rem;"><i class="fas fa-hourglass-half me-1"></i>Quedan ${diffDays} días (Corte: día ${cliente.dia})</small>`;
+                    } else {
+                        textoRenovacion = `<small class="text-muted d-block mt-1" style="font-size: 0.75rem;"><i class="fas fa-calendar-check me-1"></i>Ciclo pagado (Corte: día ${cliente.dia})</small>`;
+                    }
+                } else {
+                    // Para alquiler de cuartos, texto directo y limpio
+                    textoRenovacion = `<small class="text-success fw-bold d-block mt-1" style="font-size: 0.75rem;"><i class="fas fa-check-circle me-1"></i>Pago el mes de ${meses[pago.mes - 1]}</small>`;
+                }
+                
+                // --- SECCIÓN: YA PAGADOS ---
                 htmlPagados += `
                 <div class="card-custom p-3 shadow-sm border-start border-4 border-success mb-2">
                     <div class="d-flex justify-content-between align-items-center">
@@ -139,6 +318,7 @@ function renderizarDashboard() {
                                 ${badgeHtml}
                             </h6>
                             <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pago.metodo}</small>
+                            ${textoRenovacion}
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="fw-bold text-success fs-5 me-2">S/ ${parseFloat(pago.monto).toFixed(2)}</span>
@@ -362,98 +542,170 @@ function abrirModalGarantia(clienteId, nombre, monto) {
 }
 
 function procesarPago() {
+    const user = auth.currentUser;
     let pagoIdVal = document.getElementById('pago-id-actual').value;
     let metodo = document.querySelector('input[name="metodo_pago"]:checked').value;
     
-    // Si el valor empieza con GARANTIA_
-    if (String(pagoIdVal).startsWith("GARANTIA_")) {
-        let cliId = parseInt(pagoIdVal.split("_")[1]);
-        let clientes = JSON.parse(localStorage.getItem('aldia_clientes'));
-        let cliente = clientes.find(c => c.id === cliId);
-        
-        if (cliente) {
-            cliente.garantia_pagada = true; // Actualizamos su perfil
-            localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+    if (user) {
+        // --- MODO NUBE (Conectado a Google) ---
+        let dbUser = db.collection('usuarios').doc(user.uid);
+        if (String(pagoIdVal).startsWith("GARANTIA_")) {
+            let cliId = parseInt(pagoIdVal.split("_")[1]);
+            let clientes = JSON.parse(localStorage.getItem('aldia_clientes'));
+            let cliente = clientes.find(c => c.id === cliId);
             
-            let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-            pagos.push({
-                id: Date.now(),
-                cliente_id: cliente.id,
-                mes: mesActual,
-                año: añoActual,
-                monto: cliente.garantia_monto,
-                pagado: true,
-                metodo: metodo,
-                historico: `${cliente.nombre} (Garantía)`.trim(),
-                es_garantia: true
-            });
-            localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            if (cliente) {
+                dbUser.collection('clientes').doc(cliente.id.toString()).update({ garantia_pagada: true });
+                let nuevoPagoGar = {
+                    id: Date.now(), cliente_id: cliente.id, mes: mesActual, año: añoActual,
+                    monto: cliente.garantia_monto, pagado: true, metodo: metodo,
+                    historico: `${cliente.nombre} (Garantía)`.trim(), es_garantia: true
+                };
+                dbUser.collection('pagos').doc(nuevoPagoGar.id.toString()).set(nuevoPagoGar);
+            }
+        } else {
+            let pagoId = parseInt(pagoIdVal);
+            dbUser.collection('pagos').doc(pagoId.toString()).set({ pagado: true, metodo: metodo }, { merge: true }); 
         }
     } else {
-        // Es un pago mensual normal
-        let pagoId = parseInt(pagoIdVal);
-        let pagos = JSON.parse(localStorage.getItem('aldia_pagos'));
-        let index = pagos.findIndex(p => p.id === pagoId);
-        if(index !== -1) {
-            pagos[index].pagado = true;
-            pagos[index].metodo = metodo;
-            localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+        // --- MODO LOCAL (Invitado) ---
+        if (String(pagoIdVal).startsWith("GARANTIA_")) {
+            let cliId = parseInt(pagoIdVal.split("_")[1]);
+            let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+            let cIndex = clientes.findIndex(c => c.id === cliId);
+            
+            if (cIndex !== -1) {
+                clientes[cIndex].garantia_pagada = true; 
+                localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+                
+                let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+                pagos.push({
+                    id: Date.now(), cliente_id: clientes[cIndex].id, mes: mesActual, año: añoActual,
+                    monto: clientes[cIndex].garantia_monto, pagado: true, metodo: metodo,
+                    historico: `${clientes[cIndex].nombre} (Garantía)`.trim(), es_garantia: true
+                });
+                localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            }
+        } else {
+            let pagoId = parseInt(pagoIdVal);
+            let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+            let index = pagos.findIndex(p => p.id === pagoId);
+            if(index !== -1) {
+                pagos[index].pagado = true;
+                pagos[index].metodo = metodo;
+                localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            }
         }
+        renderizarDashboard(); // En modo local, tenemos que redibujar a mano
     }
     
-    modalInstancia.hide();
-    renderizarDashboard();
+    if (document.activeElement) document.activeElement.blur();
+    if (modalInstancia) modalInstancia.hide();
 }
 
-// --- NUEVA FUNCIÓN: REVERTIR COBRO ---
 function revertirPago(pagoId, nombre) {
+    const user = auth.currentUser;
+
     if(confirm(`⚠️ ¿Seguro que deseas REVERTIR el cobro de ${nombre}?`)) {
         let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
         let index = pagos.findIndex(p => p.id === pagoId);
         
         if(index !== -1) {
-            if (pagos[index].es_garantia) {
-                // Revertimos la garantía en el perfil del cliente
-                let clientes = JSON.parse(localStorage.getItem('aldia_clientes'));
-                let cIndex = clientes.findIndex(c => c.id === pagos[index].cliente_id);
-                if (cIndex !== -1) {
-                    clientes[cIndex].garantia_pagada = false;
-                    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+            if (user) {
+                // --- MODO NUBE ---
+                if (pagos[index].es_garantia) {
+                    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+                    let cliente = clientes.find(c => c.id === pagos[index].cliente_id);
+                    let updateData = { garantia_pagada: false };
+                    
+                    if (cliente && !cliente.garantia_fecha) {
+                        let hoyObj = new Date();
+                        updateData.garantia_fecha = `${hoyObj.getFullYear()}-${String(hoyObj.getMonth()+1).padStart(2,'0')}-${String(hoyObj.getDate()).padStart(2,'0')}`;
+                    }
+                    db.collection('usuarios').doc(user.uid).collection('clientes').doc(pagos[index].cliente_id.toString()).update(updateData);
+                    db.collection('usuarios').doc(user.uid).collection('pagos').doc(pagoId.toString()).delete();
+                } else {
+                    db.collection('usuarios').doc(user.uid).collection('pagos').doc(pagoId.toString()).update({ pagado: false, metodo: "" });
                 }
-                // Borramos el recibo falso del historial
-                pagos.splice(index, 1);
             } else {
-                // Revertimos el pago mensual normal
-                pagos[index].pagado = false;
-                pagos[index].metodo = "";
+                // --- MODO LOCAL (Invitado) ---
+                if (pagos[index].es_garantia) {
+                    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+                    let cIndex = clientes.findIndex(c => c.id === pagos[index].cliente_id);
+                    if(cIndex !== -1) {
+                        clientes[cIndex].garantia_pagada = false;
+                        if (!clientes[cIndex].garantia_fecha) {
+                            let hoyObj = new Date();
+                            clientes[cIndex].garantia_fecha = `${hoyObj.getFullYear()}-${String(hoyObj.getMonth()+1).padStart(2,'0')}-${String(hoyObj.getDate()).padStart(2,'0')}`;
+                        }
+                        localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+                    }
+                    pagos.splice(index, 1);
+                    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+                } else {
+                    pagos[index].pagado = false;
+                    pagos[index].metodo = "";
+                    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+                }
+                renderizarDashboard();
             }
-            localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-            
-            renderizarDashboard();
-            renderizarEstadisticas();
         }
     }
 }
 
+// --- RELOJ AUTOMÁTICO (Conectado a la nube) ---
+function generarDeudasDelMes() {
+    const user = auth.currentUser;
+    if (!user) return; // Solo funciona si hay sesión iniciada
+
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+
+    clientes.forEach(cli => {
+        if (cli.activo) {
+            let tocaCobrar = true; 
+            if (cli.fecha_inicio) {
+                let [anioIni, mesIni, diaIni] = cli.fecha_inicio.split('-').map(Number);
+                tocaCobrar = (añoActual > anioIni) || (añoActual === anioIni && mesActual >= mesIni);
+            }
+
+            if (tocaCobrar) {
+                let pagoExiste = pagos.find(p => p.cliente_id === cli.id && p.mes === mesActual && p.año === añoActual && !p.es_garantia);
+                if (!pagoExiste) {
+                    let nuevoPago = {
+                        id: Date.now() + Math.floor(Math.random() * 1000),
+                        cliente_id: cli.id,
+                        mes: mesActual,
+                        año: añoActual,
+                        monto: cli.monto,
+                        pagado: false,
+                        metodo: "",
+                        historico: `${cli.nombre} ${cli.apellido || ''}`.trim()
+                    };
+                    // Enviar directo a Firestore en lugar de LocalStorage
+                    db.collection('usuarios').doc(user.uid).collection('pagos').doc(nuevoPago.id.toString()).set(nuevoPago);
+                }
+            }
+        }
+    });
+}
+
 function guardarNuevoCliente(e) {
     e.preventDefault();
+    const user = auth.currentUser;
     
     // 1. Capturar datos básicos
     let fechaInput = document.getElementById('cli-fecha-inicio').value;
     let partes = fechaInput.split('-');
-    
-    // 2. Capturar si es Cuarto o Streaming
     let chkStreaming = document.getElementById('tipo-streaming');
     let esStreaming = chkStreaming ? chkStreaming.checked : false;
     let tipoServicio = esStreaming ? 'streaming' : 'cuarto';
     
-    // 3. Capturar datos de la garantía (Forzamos a 0 si es Streaming)
     let tieneGarantia = esStreaming ? false : document.getElementById('chk-tiene-garantia').checked;
     let montoGarantia = tieneGarantia ? (parseFloat(document.getElementById('cli-garantia-monto').value) || 0) : 0;
     let pagadaGarantia = tieneGarantia ? document.getElementById('chk-garantia-pagada').checked : false;
     let fechaGarantia = tieneGarantia ? document.getElementById('cli-garantia-fecha').value : "";
 
-    // --- 🛡️ VALIDACIÓN DE SEGURIDAD ---
     if (tieneGarantia) {
         if (montoGarantia <= 0) {
             alert("⚠️ ¡Atención!\nHas indicado que aplica garantía, pero el monto es 0 o está vacío.");
@@ -467,10 +719,9 @@ function guardarNuevoCliente(e) {
         }
     }
 
-    // 4. Crear objeto del cliente (AQUÍ SE GUARDA EL TIPO DE SERVICIO)
     let nCli = {
         id: Date.now(),
-        tipo_servicio: tipoServicio, // ¡Este es el dato que faltaba!
+        tipo_servicio: tipoServicio, 
         nombre: document.getElementById('cli-nombre').value,
         apellido: document.getElementById('cli-apellido').value,
         monto: parseFloat(document.getElementById('cli-monto').value),
@@ -483,13 +734,6 @@ function guardarNuevoCliente(e) {
         garantia_fecha: fechaGarantia
     };
     
-    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    clientes.push(nCli);
-    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
-    
-    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    
-    // Capturar el método de pago seleccionado
     let metodoInputs = document.querySelectorAll('input[name="metodo_pago_inicial"]');
     let metodoSeleccionado = "Efectivo";
     for(let r of metodoInputs){
@@ -499,9 +743,10 @@ function guardarNuevoCliente(e) {
         }
     }
 
-    // Ingresar pago de garantía
+    let pagosAGuardar = [];
+
     if (montoGarantia > 0 && pagadaGarantia) {
-        pagos.push({
+        pagosAGuardar.push({
             id: Date.now() + 500,
             cliente_id: nCli.id,
             mes: mesActual,
@@ -514,7 +759,6 @@ function guardarNuevoCliente(e) {
         });
     }
 
-    // LÓGICA DE PAGO INICIAL (ALQUILER)
     let chkPagado = document.getElementById('chk-pago-inicial');
     if (chkPagado && chkPagado.checked) {
         let cuotasAdelantadas = parseInt(document.getElementById('cli-cuotas-adelanto').value) || 1;
@@ -526,7 +770,7 @@ function guardarNuevoCliente(e) {
             let añoCobro = añoBase;
             while (mesCobro > 12) { mesCobro -= 12; añoCobro++; }
 
-            pagos.push({
+            pagosAGuardar.push({
                 id: Date.now() + i,
                 cliente_id: nCli.id,
                 mes: mesCobro,
@@ -538,26 +782,35 @@ function guardarNuevoCliente(e) {
             });
         }
     }
-    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+
+    if (user) {
+        // --- MODO NUBE ---
+        let dbUser = db.collection('usuarios').doc(user.uid);
+        dbUser.collection('clientes').doc(nCli.id.toString()).set(nCli);
+        pagosAGuardar.forEach(p => {
+            dbUser.collection('pagos').doc(p.id.toString()).set(p);
+        });
+    } else {
+        // --- MODO LOCAL (Invitado) ---
+        let clientesLocales = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+        clientesLocales.push(nCli);
+        localStorage.setItem('aldia_clientes', JSON.stringify(clientesLocales));
+        
+        if (pagosAGuardar.length > 0) {
+            let pagosLocales = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+            pagosAGuardar.forEach(p => pagosLocales.push(p));
+            localStorage.setItem('aldia_pagos', JSON.stringify(pagosLocales));
+        }
+        renderizarDashboard(); // Refrescar pantalla manual
+    }
     
-    generarDeudasDelMes();
-    
-    // Limpieza y Reseteo total del formulario
+    // Limpieza de formulario
     document.getElementById('form-nuevo-cliente').reset();
     if(chkPagado) { chkPagado.checked = false; toggleMetodoPagoInicial(); }
-    
     let chkTieneGar = document.getElementById('chk-tiene-garantia');
-    if (chkTieneGar) {
-        chkTieneGar.checked = false;
-        toggleOpcionesGarantia();
-    }
-    
-    // Reseteamos el switch superior de vuelta a "Cuarto"
+    if (chkTieneGar) { chkTieneGar.checked = false; toggleOpcionesGarantia(); }
     let radioCuarto = document.getElementById('tipo-cuarto');
-    if (radioCuarto) { 
-        radioCuarto.checked = true; 
-        toggleTipoServicio(); 
-    }
+    if (radioCuarto) { radioCuarto.checked = true; toggleTipoServicio(); }
     
     navegar('dashboard');
 }
@@ -648,37 +901,152 @@ function calcularGarantiaDevolver() {
 }
 
 // --- LA FUNCIÓN DE ARRANCAR LA HOJA ---
-function reiniciarTotales() {
-    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    
-    // Elimina del registro todos los que tengan pagado = true. 
-    // Las deudas pendientes (pagado = false) se salvan.
-    pagos = pagos.filter(p => p.pagado === false);
-    
-    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-    alert("✅ Historial limpiado exitosamente. Tu contador está en 0.");
-    navegar('dashboard');
+async function reiniciarTotales() {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    if (confirm("⚠️ ¿Estás seguro de limpiar TODO el historial financiero?\n\nEsto borrará de la nube todos los cobros completados y TODOS los egresos.")) {
+        
+        // Preparar el Modal Visual
+        if (!modalCargaBackupInstancia) modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
+        
+        let barra = document.getElementById('barra-progreso-backup');
+        let icono = document.getElementById('icono-backup');
+        let titulo = document.getElementById('titulo-backup');
+        let texto = document.getElementById('texto-backup');
+        let btnCerrar = document.getElementById('btn-cerrar-backup');
+
+        barra.style.width = '0%';
+        barra.innerText = '0%';
+        barra.classList.add('progress-bar-animated'); 
+        icono.className = 'fas fa-spinner fa-spin text-danger mb-3';
+        titulo.innerText = 'Eliminando Historial...';
+        texto.innerText = 'Limpiando ingresos y egresos de la nube. Por favor espera.';
+        btnCerrar.classList.add('d-none');
+        
+        modalCargaBackupInstancia.show();
+
+        let progreso = 0;
+        let simulacion = setInterval(() => {
+            if (progreso < 85) {
+                progreso += Math.floor(Math.random() * 15) + 10;
+                if(progreso > 85) progreso = 85;
+                barra.style.width = progreso + '%';
+                barra.innerText = progreso + '%';
+            }
+        }, 250);
+
+        try {
+            let dbUser = db.collection('usuarios').doc(user.uid);
+            let operacionesABorrar = [];
+            
+            let snapPagos = await dbUser.collection('pagos').where('pagado', '==', true).get();
+            snapPagos.forEach(doc => operacionesABorrar.push(doc.ref));
+            
+            let snapEgresos = await dbUser.collection('egresos').get();
+            snapEgresos.forEach(doc => operacionesABorrar.push(doc.ref));
+            
+            for (let i = 0; i < operacionesABorrar.length; i += 400) {
+                let chunk = operacionesABorrar.slice(i, i + 400);
+                let batch = db.batch();
+                chunk.forEach(ref => batch.delete(ref));
+                await batch.commit(); 
+            }
+            
+            // Éxito: Completar al 100%
+            clearInterval(simulacion);
+            barra.style.width = '100%';
+            barra.innerText = '100%';
+            barra.classList.remove('progress-bar-animated');
+            icono.className = 'fas fa-check-circle text-success mb-3';
+            titulo.innerText = '¡Historial Limpio!';
+            texto.innerText = 'Se han borrado los movimientos. Haz clic en Aceptar para continuar.';
+            
+            btnCerrar.classList.remove('d-none');
+            btnCerrar.onclick = () => {
+                modalCargaBackupInstancia.hide();
+                navegar('dashboard'); // Volvemos al inicio al aceptar
+            };
+
+        } catch (error) {
+            clearInterval(simulacion);
+            modalCargaBackupInstancia.hide();
+            alert("❌ Error al limpiar el historial: " + error.message);
+        }
+    }
 }
 
 // --- NUEVA FUNCIÓN: BORRAR TODOS LOS CLIENTES ---
-function borrarTodosLosClientes() {
-    let confirmacion = confirm("🚨 ¡ADVERTENCIA EXTREMA! 🚨\n\n¿Estás absolutamente seguro de que quieres ELIMINAR A TODOS TUS CLIENTES?\n\nEsta acción no se puede deshacer y borrará todas las deudas pendientes.");
+async function borrarTodosLosClientes() {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    let confirmacion = confirm("🚨 ¡ADVERTENCIA EXTREMA! 🚨\n\n¿Estás absolutamente seguro de que quieres ELIMINAR A TODOS TUS CLIENTES de la nube?");
     
     if (confirmacion) {
-        // 1. Vaciamos la lista de clientes
-        localStorage.setItem('aldia_clientes', JSON.stringify([]));
         
-        // 2. Limpiamos los pagos pendientes para que no queden "deudas fantasma" de clientes que ya no existen
-        let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-        // Solo conservamos los que YA están pagados (para que tu total histórico no se borre por accidente)
-        let pagosHistoricos = pagos.filter(p => p.pagado === true);
-        localStorage.setItem('aldia_pagos', JSON.stringify(pagosHistoricos));
+        // Preparar el Modal Visual
+        if (!modalCargaBackupInstancia) modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
+        
+        let barra = document.getElementById('barra-progreso-backup');
+        let icono = document.getElementById('icono-backup');
+        let titulo = document.getElementById('titulo-backup');
+        let texto = document.getElementById('texto-backup');
+        let btnCerrar = document.getElementById('btn-cerrar-backup');
 
-        alert("¡Limpieza completada! Todos los clientes han sido eliminados.");
+        barra.style.width = '0%';
+        barra.innerText = '0%';
+        barra.classList.add('progress-bar-animated'); 
+        icono.className = 'fas fa-spinner fa-spin text-danger mb-3';
+        titulo.innerText = 'Borrando Clientes...';
+        texto.innerText = 'Eliminando registros y deudas pendientes. Por favor espera.';
+        btnCerrar.classList.add('d-none');
         
-        // Recargamos las pantallas
-        renderizarDashboard();
-        renderizarCalendario();
+        modalCargaBackupInstancia.show();
+
+        let progreso = 0;
+        let simulacion = setInterval(() => {
+            if (progreso < 85) {
+                progreso += Math.floor(Math.random() * 15) + 10;
+                if(progreso > 85) progreso = 85;
+                barra.style.width = progreso + '%';
+                barra.innerText = progreso + '%';
+            }
+        }, 250);
+
+        try {
+            let dbUser = db.collection('usuarios').doc(user.uid);
+            
+            let snapClientes = await dbUser.collection('clientes').get();
+            let batch = db.batch();
+            snapClientes.forEach(doc => batch.delete(doc.ref));
+            
+            let snapPagos = await dbUser.collection('pagos').where('pagado', '==', false).get();
+            snapPagos.forEach(doc => batch.delete(doc.ref));
+
+            await batch.commit();
+            
+            // Éxito: Completar al 100%
+            clearInterval(simulacion);
+            barra.style.width = '100%';
+            barra.innerText = '100%';
+            barra.classList.remove('progress-bar-animated');
+            icono.className = 'fas fa-check-circle text-success mb-3';
+            titulo.innerText = '¡Limpieza Completada!';
+            texto.innerText = 'Todos los clientes han sido eliminados de la nube.';
+            
+            btnCerrar.classList.remove('d-none');
+            btnCerrar.onclick = () => {
+                modalCargaBackupInstancia.hide();
+                renderizarDashboard();
+                renderizarCalendario();
+            };
+
+        } catch (error) {
+            clearInterval(simulacion);
+            modalCargaBackupInstancia.hide();
+            alert("❌ Error al borrar los clientes: " + error.message);
+        }
     }
 }
 
@@ -928,7 +1296,11 @@ function crearNuevoApunte() {
     modalApunteInstancia.show();
 }
 
+// ==========================================
+// --- LÓGICA DE APUNTES EN LA NUBE ---
+// ==========================================
 function guardarNuevoApunte() {
+    const user = auth.currentUser;
     let titulo = document.getElementById('nuevo-apunte-titulo').value.trim();
     if (!titulo) {
         alert("Por favor, ingresa un nombre para la lista");
@@ -936,18 +1308,19 @@ function guardarNuevoApunte() {
     }
 
     let tipo = document.querySelector('input[name="tipo_apunte"]:checked').value;
-    let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+    let nuevoApunte = { id: Date.now(), titulo: titulo, tipo: tipo, items: [] };
     
-    apuntes.push({
-        id: Date.now(),
-        titulo: titulo,
-        tipo: tipo, // Guardamos si es "simple" o "cuentas"
-        items: []
-    });
-    
-    localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+    if (user) {
+        // MODO NUBE
+        db.collection('usuarios').doc(user.uid).collection('apuntes').doc(nuevoApunte.id.toString()).set(nuevoApunte);
+    } else {
+        // MODO LOCAL
+        let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+        apuntes.push(nuevoApunte);
+        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+        renderizarApuntes();
+    }
     modalApunteInstancia.hide();
-    renderizarApuntes();
 }
 
 function renderizarApuntes() {
@@ -1146,76 +1519,105 @@ function renderizarApuntes() {
 
 function agregarItemApunte(e, apunteId, tipo) {
     e.preventDefault();
+    const user = auth.currentUser;
     let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let index = apuntes.findIndex(a => a.id === apunteId);
+    let apunte = apuntes.find(a => a.id === apunteId);
     
-    if (index !== -1) {
+    if (apunte) {
         let texto = document.getElementById(`nuevo-texto-${apunteId}`).value;
         let nuevoItem = { id: Date.now(), texto: texto, chequeado: false };
 
         if (tipo === 'cuentas') {
             let cantInput = document.getElementById(`nuevo-cant-${apunteId}`).value;
             let valor = document.getElementById(`nuevo-valor-${apunteId}`).value;
-            
-            // Si deja la cantidad vacía, asume 1 por defecto
             nuevoItem.cantidad = cantInput && parseInt(cantInput) > 0 ? parseInt(cantInput) : 1;
             nuevoItem.valor = parseFloat(valor);
         }
 
-        apuntes[index].items.push(nuevoItem);
-        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
-        renderizarApuntes();
-    }
-}
-
-function toggleCheckItem(apunteId, itemId) {
-    let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let aIndex = apuntes.findIndex(a => a.id === apunteId);
-    if (aIndex !== -1) {
-        let iIndex = apuntes[aIndex].items.findIndex(i => i.id === itemId);
-        if (iIndex !== -1) {
-            apuntes[aIndex].items[iIndex].chequeado = !apuntes[aIndex].items[iIndex].chequeado;
+        apunte.items.push(nuevoItem);
+        
+        if (user) {
+            // MODO NUBE
+            db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).update({ items: apunte.items });
+        } else {
+            // MODO LOCAL
             localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
             renderizarApuntes();
         }
     }
 }
 
-function eliminarItemApunte(apunteId, itemId) {
+function toggleCheckItem(apunteId, itemId) {
+    const user = auth.currentUser;
     let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let aIndex = apuntes.findIndex(a => a.id === apunteId);
-    if (aIndex !== -1) {
-        apuntes[aIndex].items = apuntes[aIndex].items.filter(i => i.id !== itemId);
-        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
-        renderizarApuntes();
+    let apunte = apuntes.find(a => a.id === apunteId);
+    
+    if (apunte) {
+        let item = apunte.items.find(i => i.id === itemId);
+        if (item) {
+            item.chequeado = !item.chequeado;
+            if (user) {
+                // MODO NUBE
+                db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).update({ items: apunte.items });
+            } else {
+                // MODO LOCAL
+                localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+                renderizarApuntes();
+            }
+        }
+    }
+}
+
+function eliminarItemApunte(apunteId, itemId) {
+    const user = auth.currentUser;
+    let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+    let apunte = apuntes.find(a => a.id === apunteId);
+    
+    if (apunte) {
+        apunte.items = apunte.items.filter(i => i.id !== itemId);
+        if (user) {
+            // MODO NUBE
+            db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).update({ items: apunte.items });
+        } else {
+            // MODO LOCAL
+            localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+            renderizarApuntes();
+        }
     }
 }
 
 function eliminarApunte(apunteId) {
+    const user = auth.currentUser;
     if (confirm("¿Seguro que quieres borrar toda esta lista?")) {
-        let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-        apuntes = apuntes.filter(a => a.id !== apunteId);
-        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
-        renderizarApuntes();
+        if (user) {
+            // MODO NUBE
+            db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).delete();
+        } else {
+            // MODO LOCAL
+            let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+            apuntes = apuntes.filter(a => a.id !== apunteId);
+            localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+            renderizarApuntes();
+        }
     }
 }
 
-// --- NUEVA FUNCIÓN: MARCAR / DESMARCAR TODOS ---
 function toggleTodosApunte(apunteId) {
+    const user = auth.currentUser;
     let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let aIndex = apuntes.findIndex(a => a.id === apunteId);
+    let apunte = apuntes.find(a => a.id === apunteId);
     
-    if (aIndex !== -1) {
-        let apunte = apuntes[aIndex];
-        
-        // Verificamos si TODOS ya están marcados
+    if (apunte) {
         let todosMarcados = apunte.items.length > 0 && apunte.items.every(i => i.chequeado);
-        
-        // Si todos están marcados, los desmarcamos. Si no, los marcamos todos.
         apunte.items.forEach(i => i.chequeado = !todosMarcados);
-        
-        localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
-        renderizarApuntes();
+        if (user) {
+            // MODO NUBE
+            db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).update({ items: apunte.items });
+        } else {
+            // MODO LOCAL
+            localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+            renderizarApuntes();
+        }
     }
 }
 
@@ -1254,40 +1656,41 @@ function abrirModalEditarItem(apunteId, itemId, esCuentas) {
 }
 
 function guardarEdicionItem() {
+    const user = auth.currentUser;
     let apunteId = parseInt(document.getElementById('edit-apunte-id').value);
     let itemId = parseInt(document.getElementById('edit-item-id').value);
     let esCuentas = document.getElementById('edit-es-cuentas').value === 'true';
 
     let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let aIndex = apuntes.findIndex(a => a.id === apunteId);
+    let apunte = apuntes.find(a => a.id === apunteId);
     
-    if (aIndex !== -1) {
-        let iIndex = apuntes[aIndex].items.findIndex(i => i.id === itemId);
-        if (iIndex !== -1) {
+    if (apunte) {
+        let item = apunte.items.find(i => i.id === itemId);
+        if (item) {
             let nuevoTexto = document.getElementById('edit-item-texto').value.trim();
-            if (!nuevoTexto) {
-                alert("⚠️ La descripción no puede estar vacía.");
-                return;
-            }
+            if (!nuevoTexto) { alert("⚠️ La descripción no puede estar vacía."); return; }
 
-            // Actualizamos los datos
-            apuntes[aIndex].items[iIndex].texto = nuevoTexto;
-
+            item.texto = nuevoTexto;
             if (esCuentas) {
                 let cant = parseInt(document.getElementById('edit-item-cant').value);
                 let valor = parseFloat(document.getElementById('edit-item-valor').value);
-                
-                apuntes[aIndex].items[iIndex].cantidad = cant > 0 ? cant : 1;
-                apuntes[aIndex].items[iIndex].valor = valor >= 0 ? valor : 0;
+                item.cantidad = cant > 0 ? cant : 1;
+                item.valor = valor >= 0 ? valor : 0;
             }
 
-            // Guardamos y refrescamos
-            localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
-            renderizarApuntes();
+            if (user) {
+                // MODO NUBE
+                db.collection('usuarios').doc(user.uid).collection('apuntes').doc(apunteId.toString()).update({ items: apunte.items });
+            } else {
+                // MODO LOCAL
+                localStorage.setItem('aldia_apuntes', JSON.stringify(apuntes));
+                renderizarApuntes();
+            }
             modalEditarItemInstancia.hide();
         }
     }
 }
+
 // --- NAVEGACIÓN TIPO APP MÓVIL ---
 function navegar(pantallaId) {
     document.querySelectorAll('.pantalla').forEach(p => p.classList.remove('activa'));
@@ -1311,7 +1714,7 @@ function navegar(pantallaId) {
 
 let modalCargaBackupInstancia = null;
 
-function exportarDatos() {
+async function exportarDatos() {
     let chkClientes = document.getElementById('chk-export-clientes');
     let chkPagos = document.getElementById('chk-export-pagos');
     let chkApuntes = document.getElementById('chk-export-apuntes');
@@ -1325,83 +1728,125 @@ function exportarDatos() {
         return;
     }
 
-    // Preparar y mostrar el modal
+    const user = auth.currentUser;
+    if (!user) {
+        alert("Debes iniciar sesión con Google para exportar.");
+        return;
+    }
+
+    // Preparar Modal Visual
     if (!modalCargaBackupInstancia) {
         modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
     }
     
-    // Capturar elementos de la interfaz
     let barra = document.getElementById('barra-progreso-backup');
     let icono = document.getElementById('icono-backup');
     let titulo = document.getElementById('titulo-backup');
     let texto = document.getElementById('texto-backup');
     let btnCerrar = document.getElementById('btn-cerrar-backup');
 
-    // Reiniciar el estado visual del modal
-    barra.style.width = '0%';
-    barra.innerText = '0%';
+    barra.style.width = '50%';
+    barra.innerText = 'Descargando...';
     barra.classList.add('progress-bar-animated'); 
     icono.className = 'fas fa-spinner fa-spin text-success mb-3';
-    titulo.innerText = 'Preparando tu respaldo...';
-    texto.innerText = 'Empaquetando clientes, pagos y apuntes de forma segura.';
+    titulo.innerText = 'Extrayendo de la Nube...';
+    texto.innerText = 'Por favor espera, empaquetando tus datos.';
     btnCerrar.classList.add('d-none');
-
+    
     modalCargaBackupInstancia.show();
 
-    // Simular el progreso de carga
-    let progreso = 0;
-    let intervalo = setInterval(() => {
-        progreso += Math.floor(Math.random() * 15) + 10; 
-        
-        if (progreso >= 100) {
-            progreso = 100;
-            clearInterval(intervalo);
-            
-            barra.style.width = progreso + '%';
-            barra.innerText = progreso + '%';
-            barra.classList.remove('progress-bar-animated'); // Detenemos la animación de las rayas
-
-            // Esperar medio segundo, descargar y transformar la interfaz
-            setTimeout(() => {
-                ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes);
-                
-                // Mostrar éxito y el botón de aceptar
-                icono.className = 'fas fa-check-circle text-success mb-3';
-                titulo.innerText = '¡Respaldo Completado!';
-                texto.innerText = 'Tu archivo se ha descargado exitosamente.';
-                btnCerrar.classList.remove('d-none');
-                
-            }, 500);
-        } else {
-            barra.style.width = progreso + '%';
-            barra.innerText = progreso + '%';
-        }
-    }, 200);
-}
-
-// Nueva función exclusiva para cerrar el modal cuando el usuario decida
-function cerrarModalBackup() {
-    if (modalCargaBackupInstancia) {
-        modalCargaBackupInstancia.hide();
-    }
-}
-
-function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
     try {
         let exportData = {};
+        let dbUser = db.collection('usuarios').doc(user.uid);
         
         if (incluirClientes) {
-            exportData.clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+            let snap = await dbUser.collection('clientes').get();
+            exportData.clientes = [];
+            snap.forEach(doc => exportData.clientes.push(doc.data()));
         }
         
         if (incluirPagos) {
-            exportData.pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-            // ¡NUEVO! Empaquetamos también los egresos dentro del historial financiero
-            exportData.egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+            let snapPagos = await dbUser.collection('pagos').get();
+            exportData.pagos = [];
+            snapPagos.forEach(doc => exportData.pagos.push(doc.data()));
+
+            let snapEgresos = await dbUser.collection('egresos').get();
+            exportData.egresos = [];
+            snapEgresos.forEach(doc => exportData.egresos.push(doc.data()));
         }
         
         if (incluirApuntes) {
-            exportData.apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+            let snap = await dbUser.collection('apuntes').get();
+            exportData.apuntes = [];
+            snap.forEach(doc => exportData.apuntes.push(doc.data()));
+        }
+
+        // Generar y Descargar Archivo de inmediato para no alertar al navegador
+        let dataStr = JSON.stringify(exportData, null, 2);
+        let blob = new Blob([dataStr], { type: "application/json" });
+        let url = URL.createObjectURL(blob);
+
+        let fecha = new Date();
+        let fechaStr = `${fecha.getFullYear()}-${(fecha.getMonth()+1).toString().padStart(2,'0')}-${fecha.getDate().toString().padStart(2,'0')}`;
+        
+        let linkElement = document.createElement('a');
+        linkElement.href = url;
+        linkElement.download = `aldia_respaldo_nube_${fechaStr}.json`;
+        document.body.appendChild(linkElement);
+        linkElement.click();
+        document.body.removeChild(linkElement);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        // Éxito Visual
+        barra.style.width = '100%';
+        barra.innerText = '100%';
+        barra.classList.remove('progress-bar-animated');
+        icono.className = 'fas fa-check-circle text-success mb-3';
+        titulo.innerText = '¡Respaldo Completado!';
+        texto.innerText = 'Tu archivo se ha descargado exitosamente.';
+        btnCerrar.classList.remove('d-none');
+
+    } catch (error) {
+        modalCargaBackupInstancia.hide();
+        alert("❌ Error al generar el respaldo: " + error.message);
+    }
+}
+
+function cerrarModalBackup() {
+    if (modalCargaBackupInstancia) modalCargaBackupInstancia.hide();
+}
+
+async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
+    const user = auth.currentUser;
+    if (!user) {
+        alert("Debes iniciar sesión para exportar datos.");
+        return;
+    }
+
+    try {
+        let exportData = {};
+        let dbUser = db.collection('usuarios').doc(user.uid);
+        
+        if (incluirClientes) {
+            let snap = await dbUser.collection('clientes').get();
+            exportData.clientes = [];
+            snap.forEach(doc => exportData.clientes.push(doc.data()));
+        }
+        
+        if (incluirPagos) {
+            let snapPagos = await dbUser.collection('pagos').get();
+            exportData.pagos = [];
+            snapPagos.forEach(doc => exportData.pagos.push(doc.data()));
+
+            let snapEgresos = await dbUser.collection('egresos').get();
+            exportData.egresos = [];
+            snapEgresos.forEach(doc => exportData.egresos.push(doc.data()));
+        }
+        
+        if (incluirApuntes) {
+            let snap = await dbUser.collection('apuntes').get();
+            exportData.apuntes = [];
+            snap.forEach(doc => exportData.apuntes.push(doc.data()));
         }
 
         let dataStr = JSON.stringify(exportData, null, 2);
@@ -1410,7 +1855,7 @@ function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
 
         let fecha = new Date();
         let fechaStr = `${fecha.getFullYear()}-${(fecha.getMonth()+1).toString().padStart(2,'0')}-${fecha.getDate().toString().padStart(2,'0')}`;
-        let fileName = `aldia_respaldo_${fechaStr}.json`;
+        let fileName = `aldia_respaldo_nube_${fechaStr}.json`;
 
         let linkElement = document.createElement('a');
         linkElement.href = url;
@@ -1422,7 +1867,7 @@ function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     } catch (error) {
-        alert("❌ Error al generar el respaldo: " + error.message);
+        alert("❌ Error al generar el respaldo de la nube: " + error.message);
     }
 }
 
@@ -1431,11 +1876,11 @@ function procesarImportacion(e) {
     if (!archivo) return;
 
     let reader = new FileReader();
-    reader.onload = function(event) {
+    reader.onload = async function(event) {
         try {
             let data = JSON.parse(event.target.result);
-            if (confirm("⚠️ ¿Estás seguro de restaurar estos datos?\n\nSe combinarán con tu información actual. Te recomendamos haber descargado un backup preventivo primero.")) {
-                ejecutarRestauracion(data);
+            if (confirm("⚠️ ¿Estás seguro de restaurar estos datos en LA NUBE?\n\nEste proceso es rápido, pero sobrescribirá la información actual.")) {
+                await ejecutarRestauracion(data);
             }
         } catch (err) {
             alert("❌ El archivo no es válido o está dañado.");
@@ -1445,79 +1890,82 @@ function procesarImportacion(e) {
     reader.readAsText(archivo);
 }
 
-function ejecutarRestauracion(data) {
-    let currentClientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    let currentPagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    let currentEgresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
-    let currentApuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+async function ejecutarRestauracion(data) {
+    const user = auth.currentUser;
+    if (!user) {
+        alert("Debes iniciar sesión para restaurar.");
+        return;
+    }
 
-    let mapeoNuevosIds = {}; // Para reconectar pagos si el ID del cliente cambia
+    // Preparar el Modal Visual
+    if (!modalCargaBackupInstancia) modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
+    
+    let barra = document.getElementById('barra-progreso-backup');
+    let icono = document.getElementById('icono-backup');
+    let titulo = document.getElementById('titulo-backup');
+    let texto = document.getElementById('texto-backup');
+    let btnCerrar = document.getElementById('btn-cerrar-backup');
 
-    // 1. RESTAURAR CLIENTES (Evitando choques)
-    if (data.clientes) {
-        data.clientes.forEach(impCli => {
-            let existe = currentClientes.find(c => c.id === impCli.id || (c.nombre === impCli.nombre && c.apellido === impCli.apellido));
+    barra.style.width = '0%';
+    barra.innerText = '0%';
+    barra.classList.add('progress-bar-animated'); 
+    icono.className = 'fas fa-spinner fa-spin text-primary mb-3';
+    titulo.innerText = 'Restaurando Datos...';
+    texto.innerText = 'Inyectando información a la nube. Por favor espera.';
+    btnCerrar.classList.add('d-none');
+    
+    modalCargaBackupInstancia.show();
+
+    // Simular progreso mientras Firebase procesa
+    let progreso = 0;
+    let simulacion = setInterval(() => {
+        if (progreso < 85) {
+            progreso += Math.floor(Math.random() * 10) + 5;
+            if(progreso > 85) progreso = 85;
+            barra.style.width = progreso + '%';
+            barra.innerText = progreso + '%';
+        }
+    }, 250);
+
+    try {
+        let dbUser = db.collection('usuarios').doc(user.uid);
+        let operaciones = []; 
+
+        if (data.clientes) data.clientes.forEach(c => operaciones.push({ col: 'clientes', id: c.id.toString(), doc: c }));
+        if (data.pagos) data.pagos.forEach(p => operaciones.push({ col: 'pagos', id: p.id.toString(), doc: p }));
+        if (data.egresos) data.egresos.forEach(e => operaciones.push({ col: 'egresos', id: e.id.toString(), doc: e }));
+        if (data.apuntes) data.apuntes.forEach(a => operaciones.push({ col: 'apuntes', id: a.id.toString(), doc: a }));
+
+        for (let i = 0; i < operaciones.length; i += 400) {
+            let chunk = operaciones.slice(i, i + 400);
+            let batch = db.batch();
             
-            if (existe) {
-                let decision = confirm(`El cliente "${impCli.nombre}" ya existe.\n\n• ACEPTAR: Combinar recibos con el actual.\n• CANCELAR: Crear como cliente nuevo (duplicado).`);
-                if (decision) {
-                    mapeoNuevosIds[impCli.id] = existe.id;
-                } else {
-                    let nuevoId = Date.now() + Math.floor(Math.random() * 10000);
-                    currentClientes.push({ ...impCli, id: nuevoId, nombre: impCli.nombre + " (Importado)" });
-                    mapeoNuevosIds[impCli.id] = nuevoId;
-                }
-            } else {
-                currentClientes.push(impCli);
-                mapeoNuevosIds[impCli.id] = impCli.id;
-            }
-        });
-    }
-
-    // 2. RESTAURAR PAGOS (Conexión inteligente)
-    if (data.pagos) {
-        data.pagos.forEach(pImp => {
-            let idDestino = mapeoNuevosIds[pImp.cliente_id] || pImp.cliente_id;
-            // Evitar duplicar el mismo recibo exacto
-            let pagoExiste = currentPagos.find(p => p.cliente_id === idDestino && p.mes === pImp.mes && p.año === pImp.año && (p.es_garantia === pImp.es_garantia));
+            chunk.forEach(op => {
+                let docRef = dbUser.collection(op.col).doc(op.id);
+                batch.set(docRef, op.doc, { merge: true });
+            });
             
-            if (!pagoExiste) {
-                currentPagos.push({ ...pImp, id: Date.now() + Math.floor(Math.random() * 100000), cliente_id: idDestino });
-            }
-        });
+            await batch.commit(); 
+        }
+
+        // Éxito: Completar al 100%
+        clearInterval(simulacion);
+        barra.style.width = '100%';
+        barra.innerText = '100%';
+        barra.classList.remove('progress-bar-animated');
+        icono.className = 'fas fa-check-circle text-success mb-3';
+        titulo.innerText = '¡Restauración Completa!';
+        texto.innerText = 'Tus datos se inyectaron exitosamente. Haz clic en Aceptar para recargar.';
+        
+        btnCerrar.classList.remove('d-none');
+        // Obligamos a que al darle clic a Aceptar, se recargue la página
+        btnCerrar.onclick = () => location.reload(); 
+
+    } catch (error) {
+        clearInterval(simulacion);
+        modalCargaBackupInstancia.hide();
+        alert("❌ Error al restaurar en la nube: " + error.message);
     }
-
-    // 3. RESTAURAR EGRESOS (Seguridad Anti-Clones)
-    if (data.egresos) {
-        data.egresos.forEach(eImp => {
-            // Busca si ya existe un gasto con el mismo ID, o idéntico en fecha, motivo y monto
-            let egresoExiste = currentEgresos.find(e => e.id === eImp.id || (e.fecha === eImp.fecha && e.motivo === eImp.motivo && parseFloat(e.monto) === parseFloat(eImp.monto)));
-            if (!egresoExiste) {
-                // Le asignamos un nuevo ID único por seguridad
-                currentEgresos.push({ ...eImp, id: Date.now() + Math.floor(Math.random() * 100000) });
-            }
-        });
-    }
-
-    // 4. RESTAURAR APUNTES
-    if (data.apuntes) {
-        data.apuntes.forEach(aImp => {
-            if (!currentApuntes.find(a => a.titulo === aImp.titulo)) {
-                currentApuntes.push(aImp);
-            } else {
-                currentApuntes.push({ ...aImp, id: Date.now() + Math.floor(Math.random() * 10000), titulo: aImp.titulo + " (Copia)" });
-            }
-        });
-    }
-
-    // Guardar absolutamente todo en LocalStorage
-    localStorage.setItem('aldia_clientes', JSON.stringify(currentClientes));
-    localStorage.setItem('aldia_pagos', JSON.stringify(currentPagos));
-    localStorage.setItem('aldia_egresos', JSON.stringify(currentEgresos));
-    localStorage.setItem('aldia_apuntes', JSON.stringify(currentApuntes));
-
-    alert("✅ ¡Restauración exitosa!\nSe han procesado clientes, recibos, egresos y apuntes de forma segura.");
-    location.reload(); 
 }
 
 function toggleMetodoPagoInicial() {
@@ -1529,8 +1977,8 @@ function toggleMetodoPagoInicial() {
     }
 }
 
-let mesVisualizado = hoy.getMonth() + 1;
-let añoVisualizado = hoy.getFullYear();
+mesVisualizado = hoy.getMonth() + 1;
+añoVisualizado = hoy.getFullYear();
 
 function cambiarMes(direccion) {
     mesVisualizado += direccion;
@@ -1539,9 +1987,11 @@ function cambiarMes(direccion) {
     renderizarDashboard();
 }
 
-// --- MANEJO DE EGRESOS ---
+// --- MANEJO DE EGRESOS EN LA NUBE ---
 function guardarNuevoEgreso(e) {
     e.preventDefault();
+    const user = auth.currentUser;
+
     let fechaInput = document.getElementById('egr-fecha').value;
     if (!fechaInput) return;
     
@@ -1557,21 +2007,36 @@ function guardarNuevoEgreso(e) {
         monto: parseFloat(document.getElementById('egr-monto').value)
     };
     
-    let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
-    egresos.push(nEgr);
-    localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+    if (user) {
+        // MODO NUBE
+        db.collection('usuarios').doc(user.uid).collection('egresos').doc(nEgr.id.toString()).set(nEgr);
+    } else {
+        // MODO LOCAL
+        let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+        egresos.push(nEgr);
+        localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+        renderizarDashboard();
+    }
     
     document.getElementById('form-nuevo-egreso').reset();
-    navegar('dashboard'); // Volvemos al inicio para ver el cambio
+    navegar('dashboard'); 
 }
 
 function eliminarEgreso(id) {
+    const user = auth.currentUser;
+
     if(confirm("¿Seguro que deseas eliminar este gasto? El dinero regresará a tu saldo neto.")) {
-        let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
-        egresos = egresos.filter(e => e.id !== id);
-        localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
-        renderizarDashboard();
-        renderizarEstadisticas();
+        if (user) {
+            // MODO NUBE
+            db.collection('usuarios').doc(user.uid).collection('egresos').doc(id.toString()).delete();
+        } else {
+            // MODO LOCAL
+            let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+            egresos = egresos.filter(e => e.id !== id);
+            localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+            renderizarDashboard();
+            renderizarEstadisticas();
+        }
     }
 }
 
@@ -1608,21 +2073,23 @@ function toggleFechaGarantia() {
 
 // --- PROCESAR EL RETIRO (MUDANZA) A PRUEBA DE BALAS ---
 function procesarMudanza() {
+    const user = auth.currentUser;
+    if (!user) return;
+    
     let clienteId = parseInt(document.getElementById('baja-cliente-id').value);
-    guardarSnapshot(); // 📸 ¡FOTO TOMADA!
+    // guardarSnapshot(); // (Lo conectaremos a la nube en la siguiente fase)
     
     let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
     let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+    let cliente = clientes.find(c => c.id === clienteId);
     
-    let cIndex = clientes.findIndex(c => c.id === clienteId);
-    if (cIndex === -1) return;
+    if (!cliente) return;
     
-    let cliente = clientes[cIndex];
     let esStreaming = cliente.tipo_servicio === 'streaming';
+    let dbUser = db.collection('usuarios').doc(user.uid);
     
-    // 1. Desactivar al cliente (Aplica para ambos)
-    clientes[cIndex].activo = false;
+    // 1. Desactivar al cliente en la nube
+    dbUser.collection('clientes').doc(clienteId.toString()).update({ activo: false });
 
     // 2. Lógica solo para CUARTOS (Prorrateo y Garantía)
     if (!esStreaming) {
@@ -1630,11 +2097,14 @@ function procesarMudanza() {
         let pagoIndex = pagos.findIndex(p => p.cliente_id === clienteId && p.mes === mesActual && p.año === añoActual && !p.es_garantia);
         
         if (pagoIndex !== -1) {
-            pagos[pagoIndex].monto = montoAlquilerFinal;
-            pagos[pagoIndex].pagado = true; 
-            if (!pagos[pagoIndex].metodo) pagos[pagoIndex].metodo = "Liquidación Final";
+            let pId = pagos[pagoIndex].id;
+            dbUser.collection('pagos').doc(pId.toString()).update({
+                monto: montoAlquilerFinal,
+                pagado: true,
+                metodo: pagos[pagoIndex].metodo || "Liquidación Final"
+            });
         } else {
-            pagos.push({
+            let nuevoPagoFinal = {
                 id: Date.now(),
                 cliente_id: cliente.id,
                 mes: mesActual,
@@ -1643,7 +2113,8 @@ function procesarMudanza() {
                 pagado: true,
                 metodo: "Liquidación Final",
                 historico: `${cliente.nombre} ${cliente.apellido || ''}`.trim()
-            });
+            };
+            dbUser.collection('pagos').doc(nuevoPagoFinal.id.toString()).set(nuevoPagoFinal);
         }
 
         let montoGar = parseFloat(cliente.garantia_monto) || 0;
@@ -1657,7 +2128,7 @@ function procesarMudanza() {
 
             if (devolver > 0) {
                 let fechaHoy = new Date();
-                egresos.push({
+                let nuevoEgreso = {
                     id: Date.now() + Math.floor(Math.random() * 1000),
                     fecha: `${fechaHoy.getFullYear()}-${String(fechaHoy.getMonth()+1).padStart(2,'0')}-${String(fechaHoy.getDate()).padStart(2,'0')}`,
                     dia: fechaHoy.getDate(),
@@ -1665,50 +2136,45 @@ function procesarMudanza() {
                     año: fechaHoy.getFullYear(),
                     motivo: `Devolución de Garantía - ${cliente.nombre}`,
                     monto: devolver
-                });
+                };
+                dbUser.collection('egresos').doc(nuevoEgreso.id.toString()).set(nuevoEgreso);
             }
         }
     }
 
-    // 3. Borrar recibos futuros pendientes (Aplica para ambos)
-    pagos = pagos.filter(p => !(p.cliente_id === clienteId && p.pagado === false && (p.año > añoActual || (p.año === añoActual && p.mes > mesActual))));
-
-    // Guardar
-    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
-    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-    localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+    // 3. Borrar recibos futuros pendientes
+    let pagosFuturos = pagos.filter(p => p.cliente_id === clienteId && p.pagado === false && (p.año > añoActual || (p.año === añoActual && p.mes > mesActual)));
+    pagosFuturos.forEach(pF => {
+        dbUser.collection('pagos').doc(pF.id.toString()).delete();
+    });
 
     modalBajaInstancia.hide();
-    
     let mensajeExito = esStreaming ? `Suscripción de ${cliente.nombre} cancelada.` : `Mudanza de ${cliente.nombre} registrada.`;
     mostrarToastDeshacer(mensajeExito);
-    
-    renderizarDashboard();
-    renderizarEstadisticas();
 }
 
 // --- PROCESAR BORRADO POR ERROR (HARD DELETE) ---
 function procesarEliminacionRastro() {
+    const user = auth.currentUser;
+    if (!user) return;
+    
     let clienteId = parseInt(document.getElementById('baja-cliente-id').value);
+    // guardarSnapshot();
     
-    guardarSnapshot(); // 📸 ¡FOTO TOMADA!
-    
-    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
     let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let dbUser = db.collection('usuarios').doc(user.uid);
     
-    clientes = clientes.filter(c => c.id !== clienteId);
-    pagos = pagos.filter(p => p.cliente_id !== clienteId);
+    // Borrar al cliente de la nube
+    dbUser.collection('clientes').doc(clienteId.toString()).delete();
     
-    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
-    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+    // Borrar todos sus recibos de la nube
+    let pagosDelCliente = pagos.filter(p => p.cliente_id === clienteId);
+    pagosDelCliente.forEach(p => {
+        dbUser.collection('pagos').doc(p.id.toString()).delete();
+    });
 
     modalBajaInstancia.hide();
-    
-    // Mostramos el mensaje flotante
-    mostrarToastDeshacer("Cliente y su historial eliminados.");
-    
-    renderizarDashboard();
-    renderizarEstadisticas();
+    mostrarToastDeshacer("Cliente y su historial eliminados definitivamente de la nube.");
 }
 
 // ==========================================
@@ -1810,33 +2276,27 @@ function toggleTipoServicio() {
 
 // --- NUEVA FUNCIÓN: SUMAR DÍAS A STREAMING ---
 function sumarDiasStreaming(clienteId, nombre) {
+    const user = auth.currentUser;
+    if (!user) return;
+
     let dias = prompt(`⏳ ¿Cuántos días extra deseas sumarle al servicio de ${nombre}?`);
-    
-    // Si cancela o pone 0, no hacemos nada
     if (!dias || isNaN(dias) || parseInt(dias) <= 0) return;
-    
     dias = parseInt(dias);
     
     let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    let index = clientes.findIndex(c => c.id === clienteId);
+    let cliente = clientes.find(c => c.id === clienteId);
     
-    if (index !== -1) {
-        let cliente = clientes[index];
-        
-        // Calculamos el nuevo día de corte inteligentemente
+    if (cliente) {
         let fechaSimulada = new Date(añoActual, mesActual - 1, cliente.dia);
         fechaSimulada.setDate(fechaSimulada.getDate() + dias);
-        
         let nuevoDia = fechaSimulada.getDate();
-        cliente.dia = nuevoDia; // Actualizamos el día de cobro permanentemente
         
-        // Tomamos una "foto" de seguridad por si nos equivocamos
-        guardarSnapshot(); 
-        
-        localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+        // Actualizar directamente en Firestore
+        db.collection('usuarios').doc(user.uid).collection('clientes').doc(clienteId.toString()).update({
+            dia: nuevoDia
+        });
         
         mostrarToastDeshacer(`✅ Se sumaron ${dias} días. Nuevo corte de ${nombre}: los días ${nuevoDia}.`);
-        renderizarDashboard();
     }
 }
 
@@ -1867,6 +2327,8 @@ function abrirModalEditarCliente(clienteId) {
 
 function guardarEdicionCliente(e) {
     e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
     
     let id = parseInt(document.getElementById('edit-cli-id').value);
     let nuevoNombre = document.getElementById('edit-cli-nombre').value.trim();
@@ -1875,44 +2337,90 @@ function guardarEdicionCliente(e) {
     let nuevoDia = parseInt(document.getElementById('edit-cli-dia').value);
     let nuevaRef = document.getElementById('edit-cli-ref').value.trim();
     
-    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let nombreCompleto = `${nuevoNombre} ${nuevoApellido}`.trim();
+    let dbUser = db.collection('usuarios').doc(user.uid);
     
-    let cIndex = clientes.findIndex(c => c.id === id);
+    // 1. Actualizar el perfil en la nube
+    dbUser.collection('clientes').doc(id.toString()).update({
+        nombre: nuevoNombre,
+        apellido: nuevoApellido,
+        monto: nuevoMonto,
+        dia: nuevoDia,
+        ref: nuevaRef
+    });
     
-    if (cIndex !== -1) {
-        // 1. Actualizamos el perfil base del cliente
-        clientes[cIndex].nombre = nuevoNombre;
-        clientes[cIndex].apellido = nuevoApellido;
-        clientes[cIndex].monto = nuevoMonto;
-        clientes[cIndex].dia = nuevoDia;
-        clientes[cIndex].ref = nuevaRef;
+    // 2. Lógica Inteligente para los Pagos
+    // Buscamos los pagos localmente solo para saber cuáles actualizar en la nube
+    let pagosLocales = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let pagosDelCliente = pagosLocales.filter(p => p.cliente_id === id);
+    
+    pagosDelCliente.forEach(p => {
+        if (p.pagado === false) {
+            dbUser.collection('pagos').doc(p.id.toString()).update({
+                monto: nuevoMonto,
+                historico: nombreCompleto
+            });
+        } else {
+            dbUser.collection('pagos').doc(p.id.toString()).update({
+                historico: nombreCompleto
+            });
+        }
+    });
+    
+    modalEditarInstancia.hide();
+}
+
+// ==========================================
+// --- MIGRACIÓN A LA NUBE (Temporal) ---
+// ==========================================
+async function subirDatosALaNube() {
+    const user = auth.currentUser;
+    if (!user) {
+        alert("Debes iniciar sesión con Google primero.");
+        return;
+    }
+
+    if (!confirm("¿Deseas respaldar toda tu información local en la nube ahora?")) return;
+
+    try {
+        console.log("Iniciando migración...");
         
-        let nombreCompleto = `${nuevoNombre} ${nuevoApellido}`.trim();
+        let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+        let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+        let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+        let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+
+        // Creamos una "carpeta" única para este usuario basada en su ID de Google
+        const userRef = db.collection('usuarios').doc(user.uid);
+        await userRef.set({ 
+            email: user.email, 
+            ultima_sincronizacion: new Date().toISOString() 
+        }, { merge: true });
+
+        // 1. Subir Clientes
+        for (let cli of clientes) {
+            await userRef.collection('clientes').doc(cli.id.toString()).set(cli);
+        }
         
-        // 2. Lógica Inteligente para los Pagos (No tocar el pasado)
-        pagos = pagos.map(p => {
-            if (p.cliente_id === id) {
-                // Si el recibo está pendiente, se actualiza el monto y el nombre
-                if (p.pagado === false) {
-                    return { ...p, monto: nuevoMonto, historico: nombreCompleto };
-                } 
-                // Si ya fue pagado, conservamos su monto intacto para no dañar las cuentas, 
-                // pero actualizamos el nombre por si hubo correcciones ortográficas.
-                else {
-                    return { ...p, historico: nombreCompleto };
-                }
-            }
-            return p;
-        });
-        
-        // 3. Guardar en memoria y refrescar pantallas
-        localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
-        localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-        
-        modalEditarInstancia.hide();
-        renderizarDashboard();
-        if (typeof renderizarCalendario === "function") renderizarCalendario();
-        if (typeof renderizarEstadisticas === "function") renderizarEstadisticas();
+        // 2. Subir Pagos
+        for (let pago of pagos) {
+            await userRef.collection('pagos').doc(pago.id.toString()).set(pago);
+        }
+
+        // 3. Subir Egresos
+        for (let egreso of egresos) {
+            await userRef.collection('egresos').doc(egreso.id.toString()).set(egreso);
+        }
+
+        // 4. Subir Apuntes
+        for (let apunte of apuntes) {
+            await userRef.collection('apuntes').doc(apunte.id.toString()).set(apunte);
+        }
+
+        alert("✅ ¡Migración completada! Tu información ya está segura en Firestore.");
+
+    } catch (error) {
+        console.error("Error migrando datos:", error);
+        alert("❌ Hubo un error subiendo los datos: " + error.message);
     }
 }

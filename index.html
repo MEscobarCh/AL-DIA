@@ -2,11 +2,14 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>ALDia - App</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a3a8a">
     <link href="bootstrap.min.css" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <link rel="stylesheet" href="css/all.min.css">
     <style>
         /* PALETA DE COLORES ARMÓNICA (CORREGIDA) */
@@ -75,17 +78,48 @@
         .btn-primary:hover { background-color: var(--brand-blue-hover); border-color: var(--brand-blue-hover); }
         
         .btn-outline-primary { color: var(--brand-blue); border-color: var(--brand-blue); }
-        .btn-outline-primary:hover { background-color: var(--brand-blue); color: white; }
-        
+                .btn-outline-primary:hover { background-color: var(--brand-blue); color: white; }
+                
+                /* ==========================================
+                FIX: ÁREA SEGURA PARA BOTONES DEL CELULAR
+                ========================================== */
+                .bottom-nav {
+                    padding-bottom: calc(10px + env(safe-area-inset-bottom, 20px)) !important;
+                }
+                body {
+                    padding-bottom: calc(85px + env(safe-area-inset-bottom, 20px)) !important;
+                }
     </style>
 </head>
 <body>
 
+        <!-- PANTALLA DE LOGIN -->
+        <div id="pantalla-login" class="d-flex align-items-center justify-content-center vh-100" style="background-color: #1a237e;">
+            <div class="text-center bg-white p-5 rounded-4 shadow-lg" style="max-width: 400px; width: 90%;">
+                <h1 class="fw-bold mb-2 text-primary">💰 ALDia</h1>
+                <p class="text-muted mb-4 small">Inicia sesión para gestionar tus finanzas en la nube</p>
+                
+                <button class="btn btn-outline-dark w-100 fw-bold py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm" onclick="iniciarSesionGoogle()">
+                    <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google">
+                    Continuar con Google
+                </button>
+                <button type="button" class="btn btn-outline-secondary w-100 mt-3" onclick="entrarComoInvitado()">
+                    <i class="fas fa-user-secret me-2"></i> Continuar sin cuenta
+                </button>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DE LA APLICACIÓN (Oculto inicialmente) -->
+        <div id="app-principal" class="d-none">
+<div id="banner-offline" class="bg-warning text-dark text-center py-2 fw-bold shadow-sm" style="display: none; font-size: 0.85rem; z-index: 1050; position: relative;">
+    <i class="fas fa-exclamation-triangle me-1"></i> Modo Local: Tus datos no están en la nube.
+    <button class="btn btn-sm btn-dark ms-2 py-0 px-2" onclick="location.reload()">Proteger datos</button>
+</div>
 <div class="container py-4 pantalla activa" id="vista-dashboard">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold m-0">💰 ALDia</h2>
         <div class="d-flex align-items-center bg-primary rounded-pill shadow-sm overflow-hidden">
-            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i></button>
+            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i>   </button>
             <div class="px-2 py-1 small fw-bold" id="mes-actual-display" style="min-width: 100px; text-align: center;">Cargando...</div>
             <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(1)"><i class="fas fa-chevron-right"></i></button>
         </div>
@@ -282,6 +316,13 @@
 
 <div class="container py-4 pantalla" id="vista-gestion">
     <h3 class="fw-bold mb-4">Gestión</h3>
+    <div id="seccion-cuenta-gestion" class="card-custom p-4 border border-secondary border-opacity-25 mb-4 text-center">
+        <h5 class="fw-bold text-dark mb-1"><i class="fas fa-user-circle me-2 text-primary"></i>Mi Cuenta</h5>
+        <p class="text-muted small mb-3">Conectado a la nube de Google.</p>
+        <button onclick="cerrarSesion()" class="btn btn-outline-dark fw-bold w-100 rounded-pill">
+            <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión
+        </button>
+    </div>
     
     <div class="card-custom p-4 border border-success border-2 mb-4" style="background-color: #f0fdf4;">
         <h5 class="fw-bold text-primary mb-3"><i class="fas fa-database me-2"></i>Gestión de Datos</h5>
@@ -621,6 +662,6 @@
         </div>
     </div>
 </div>
-
+</div>
 </body>
 </html>
