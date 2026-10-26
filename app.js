@@ -454,6 +454,7 @@ function procesarPago() {
 // --- NUEVA FUNCIÓN: REVERTIR COBRO ---
 function revertirPago(pagoId, nombre) {
     if(confirm(`⚠️ ¿Seguro que deseas REVERTIR el cobro de ${nombre}?`)) {
+        guardarSnapshot();
         let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
         let index = pagos.findIndex(p => p.id === pagoId);
         
@@ -475,6 +476,7 @@ function revertirPago(pagoId, nombre) {
             }
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
             
+            mostrarToastDeshacer(`Cobro de ${nombre} revertido.`);
             renderizarDashboard();
             renderizarEstadisticas();
         }
@@ -831,6 +833,7 @@ function renderizarEstadisticas() {
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
+                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="revertirPago(${ing.id}, '${ing.desc.replace(/'/g, "\\'")}')" title="Eliminar / Revertir cobro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
                         </div>
                     </div>`;
                 });
@@ -847,6 +850,7 @@ function renderizarEstadisticas() {
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-danger fw-bold small">- S/ ${parseFloat(egr.monto).toFixed(2)}</span>
+                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgreso(${egr.id})" title="Eliminar gasto"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
                         </div>
                     </div>`;
                 });
@@ -1517,9 +1521,13 @@ function guardarNuevoEgreso(e) {
 
 function eliminarEgreso(id) {
     if(confirm("¿Seguro que deseas eliminar este gasto? El dinero regresará a tu saldo neto.")) {
+        guardarSnapshot();
         let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+        let index = egresos.findIndex(e => e.id === id);
+        let motivo = index !== -1 ? egresos[index].motivo : "Gasto";
         egresos = egresos.filter(e => e.id !== id);
         localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+        mostrarToastDeshacer(`Egreso "${motivo}" eliminado.`);
         renderizarDashboard();
         renderizarEstadisticas();
     }
