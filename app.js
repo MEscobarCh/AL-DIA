@@ -99,6 +99,8 @@ function renderizarDashboard() {
     let htmlPagados = "";
     let htmlEgresos = "";
 
+    let listaPendientes = [];
+
     clientes.forEach(cliente => {
         if (!cliente.activo) return;
 
@@ -109,27 +111,23 @@ function renderizarDashboard() {
         }
 
         if (tocaCobrar) {
-            // ==========================================
-            // DISEÑO DINÁMICO (CUARTO VS STREAMING)
-            // ==========================================
-            let badgeHtml = "";
-            let botonExtraHtml = "";
-
-            if (cliente.tipo_servicio === 'streaming') {
-                badgeHtml = `<span class="badge bg-dark text-white rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-tv me-1"></i>${cliente.ref || 'Streaming'}</span>`;
-                // Botón celeste de reloj de arena (Ajustado a 35px para que se vea simétrico)
-                botonExtraHtml = `<button class="btn btn-info rounded-circle shadow-sm text-white me-2" style="width: 35px; height: 35px; padding: 0;" onclick="sumarDiasStreaming(${cliente.id}, '${cliente.nombre}')" title="Añadir días extra"><i class="fas fa-hourglass-half"></i></button>`;
-            } else {
-                badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
-            }
-
             // Buscamos si pagó la cuota mensual (ignorando la garantía aquí)
             let pago = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia);
 
             if (pago && pago.pagado) {
                 totalIngresos += parseFloat(pago.monto);
-                
+
                 // --- SECCIÓN: YA PAGADOS (Sin lápiz de edición) ---
+                let badgeHtml = "";
+                let botonExtraHtml = "";
+
+                if (cliente.tipo_servicio === 'streaming') {
+                    badgeHtml = `<span class="badge bg-dark text-white rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-tv me-1"></i>${cliente.ref || 'Streaming'}</span>`;
+                    botonExtraHtml = `<button class="btn btn-info rounded-circle shadow-sm text-white me-2" style="width: 35px; height: 35px; padding: 0;" onclick="sumarDiasStreaming(${cliente.id}, '${cliente.nombre}')" title="Añadir días extra"><i class="fas fa-hourglass-half"></i></button>`;
+                } else {
+                    badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
+                }
+
                 htmlPagados += `
                 <div class="card-custom p-3 shadow-sm border-start border-4 border-success mb-2">
                     <div class="d-flex justify-content-between align-items-center">
@@ -148,74 +146,7 @@ function renderizarDashboard() {
                     </div>
                 </div>`;
             } else {
-                let montoDeuda = pago ? pago.monto : cliente.monto;
-                saldoPendiente += parseFloat(montoDeuda);
-
-                let diaCobro = cliente.dia;
-                let textoFecha = `Cuota del ${diaCobro} de ${meses[mesVisualizado - 1]}`;
-                let textoDias = "";
-                let claseColor = "text-muted"; 
-                let botonCobroHtml = "";
-                let alertaMora = "";
-
-                // ALERTA: ¿Arrastra deudas anteriores?
-                let deudasPasadas = pagos.filter(p => p.cliente_id === cliente.id && p.pagado === false && !p.es_garantia && (p.año < añoVisualizado || (p.año === añoVisualizado && p.mes < mesVisualizado)));
-                if (deudasPasadas.length > 0) {
-                    alertaMora = `<span class="d-block text-danger fw-bold mt-1" style="font-size: 0.75rem;"><i class="fas fa-exclamation-triangle"></i> Arrastra ${deudasPasadas.length} mes(es) sin pagar</span>`;
-                }
-
-                // LÓGICA DE TIEMPOS
-                if (esMesFuturo) {
-                    textoDias = `, Proxima Cuota`;
-                    claseColor = "text-primary fw-bold";
-                    botonCobroHtml = `<i class="fas fa-lock text-muted opacity-50 fs-4" title="Mes bloqueado"></i>`;
-                } else {
-                    if (esMesPasado) {
-                        textoDias = `, ¡Atrasado!`;
-                        claseColor = "text-danger fw-bold";
-                    } else if (diaCobro > diaHoy) {
-                        let faltan = diaCobro - diaHoy;
-                        textoDias = `, faltan ${faltan} día${faltan > 1 ? 's' : ''}`;
-                    } else if (diaCobro === diaHoy) {
-                        textoDias = `, ¡Vence hoy!`;
-                        claseColor = "text-warning fw-bold";
-                    } else {
-                        let atraso = diaHoy - diaCobro;
-                        textoDias = `, atrasado por ${atraso} día${atraso > 1 ? 's' : ''}`;
-                        claseColor = "text-danger fw-bold";
-                    }
-                    
-                    if (pago) {
-                        botonCobroHtml = `<button class="btn btn-success rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModal(${pago.id}, '${cliente.nombre}', ${montoDeuda})"><i class="fas fa-check"></i></button>`;
-                    }
-                }
-
-                // --- SECCIÓN: PENDIENTES (Con el lápiz de edición inyectado aquí) ---
-                htmlPendientes += `
-                <div class="card-custom p-3 shadow-sm border-start border-4 border-warning mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <!-- Lado Izquierdo: Flexible (flex-grow-1 y min-width: 0 para que no empuje) -->
-                        <div class="flex-grow-1" style="min-width: 0; padding-right: 10px;">
-                            <h6 class="mb-1 fw-bold text-dark d-flex align-items-center flex-wrap gap-2">
-                                <span class="text-truncate" style="max-width: 100%;">${cliente.nombre}</span> 
-                                ${badgeHtml}
-                                <div class="d-inline-flex flex-nowrap">
-                                    <button class="btn btn-sm btn-link text-primary p-0" onclick="abrirModalEditarCliente(${cliente.id})" title="Editar"><i class="fas fa-edit fs-5"></i></button>
-                                    <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="eliminarCliente(${cliente.id}, '${cliente.nombre}')" title="Dar de baja"><i class="fas fa-times-circle fs-5"></i></button>
-                                </div>
-                            </h6>
-                            <small class="${claseColor} d-block text-wrap" style="font-size: 0.75rem;">${textoFecha}${textoDias}</small>
-                            ${alertaMora}
-                        </div>
-                        
-                        <!-- Lado Derecho: Intocable (flex-shrink-0 para que NUNCA se encoja) -->
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <span class="fw-bold text-dark fs-5">S/ ${parseFloat(montoDeuda).toFixed(2)}</span>
-                            ${botonExtraHtml}
-                            ${botonCobroHtml}
-                        </div>
-                    </div>
-                </div>`;
+                listaPendientes.push({ tipo: 'cuota', cliente: cliente });
             }
         }
 
@@ -223,7 +154,7 @@ function renderizarDashboard() {
         // --- LÓGICA DE GARANTÍA PAGADA (NUEVO) ---
         // ==========================================
         let pagoGarantia = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && p.es_garantia && p.pagado);
-        
+
         if (pagoGarantia) {
             totalIngresos += parseFloat(pagoGarantia.monto);
             htmlPagados += `
@@ -253,53 +184,168 @@ function renderizarDashboard() {
                 let tocaCobrarGar = (añoVisualizado > anioGar) || (añoVisualizado === anioGar && mesVisualizado >= mesGar);
 
                 if (tocaCobrarGar) {
-                    saldoPendiente += parseFloat(cliente.garantia_monto);
-                    
-                    let textoFechaGar = `Garantía para el ${diaGar} de ${meses[mesGar - 1]}`;
-                    let claseColorGar = "text-muted";
-                    let botonCobroGar = "";
-                    
-                    if (añoVisualizado === anioGar && mesVisualizado === mesGar) {
-                        if (diaGar > diaHoy && esMesActualReal) {
-                            let faltan = diaGar - diaHoy;
-                            textoFechaGar += `, faltan ${faltan} días`;
-                        } else if (diaGar === diaHoy && esMesActualReal) {
-                            textoFechaGar += `, ¡Vence hoy!`;
-                            claseColorGar = "text-warning fw-bold";
-                        } else if (diaGar < diaHoy && esMesActualReal) {
-                            let atraso = diaHoy - diaGar;
-                            textoFechaGar += `, atrasada por ${atraso} días`;
-                            claseColorGar = "text-danger fw-bold";
-                        }
-                    } else {
-                        textoFechaGar += `, ¡Atrasada!`;
-                        claseColorGar = "text-danger fw-bold";
-                    }
-                    
-                    if (!esMesFuturo) {
-                        botonCobroGar = `<button class="btn btn-primary rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModalGarantia(${cliente.id}, '${cliente.nombre}', ${cliente.garantia_monto})"><i class="fas fa-shield-alt"></i></button>`;
-                    } else {
-                        botonCobroGar = `<i class="fas fa-lock text-muted opacity-50 fs-4"></i>`;
-                    }
-
-                    htmlPendientes += `
-                    <div class="card-custom p-3 shadow-sm border-start border-4 border-primary mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
-                                    ${cliente.nombre} 
-                                    <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 0.65rem;"><i class="fas fa-shield-alt me-1"></i>Garantía</span>
-                                </h6>
-                                <small class="${claseColorGar} d-block" style="font-size: 0.75rem;">${textoFechaGar}</small>
-                            </div>
-                            <div class="d-flex align-items-center gap-3">
-                                <span class="fw-bold text-dark fs-5">S/ ${parseFloat(cliente.garantia_monto).toFixed(2)}</span>
-                                ${botonCobroGar}
-                            </div>
-                        </div>
-                    </div>`;
+                    listaPendientes.push({ tipo: 'garantia', cliente: cliente });
                 }
             }
+        }
+    });
+
+    // Ordenar deudas pendientes de forma totalmente independiente:
+    // Mayor atraso primero, y fechas futuras al final por más próximo a vencer
+    let hoyCero = new Date(fechaHoy.getFullYear(), fechaHoy.getMonth(), fechaHoy.getDate());
+    listaPendientes.sort((a, b) => {
+        let fechaA;
+        if (a.tipo === 'garantia' && (a.cliente.garantia_fecha || a.cliente.fecha)) {
+            let [anioA, mesA, diaA] = (a.cliente.garantia_fecha || a.cliente.fecha).split('-').map(Number);
+            fechaA = new Date(anioA, mesA - 1, diaA);
+        } else {
+            fechaA = new Date(añoVisualizado, mesVisualizado - 1, a.cliente.dia || 1);
+        }
+
+        let fechaB;
+        if (b.tipo === 'garantia' && (b.cliente.garantia_fecha || b.cliente.fecha)) {
+            let [anioB, mesB, diaB] = (b.cliente.garantia_fecha || b.cliente.fecha).split('-').map(Number);
+            fechaB = new Date(anioB, mesB - 1, diaB);
+        } else {
+            fechaB = new Date(añoVisualizado, mesVisualizado - 1, b.cliente.dia || 1);
+        }
+
+        let atrasoA = Math.round((hoyCero - fechaA) / (1000 * 60 * 60 * 24));
+        let atrasoB = Math.round((hoyCero - fechaB) / (1000 * 60 * 60 * 24));
+        return atrasoB - atrasoA;
+    });
+
+    // Renderizado independiente de cuotas y garantías
+    listaPendientes.forEach(item => {
+        let cliente = item.cliente;
+
+        if (item.tipo === 'cuota') {
+            let badgeHtml = "";
+            let botonExtraHtml = "";
+
+            if (cliente.tipo_servicio === 'streaming') {
+                badgeHtml = `<span class="badge bg-dark text-white rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-tv me-1"></i>${cliente.ref || 'Streaming'}</span>`;
+                botonExtraHtml = `<button class="btn btn-info rounded-circle shadow-sm text-white me-2" style="width: 35px; height: 35px; padding: 0;" onclick="sumarDiasStreaming(${cliente.id}, '${cliente.nombre}')" title="Añadir días extra"><i class="fas fa-hourglass-half"></i></button>`;
+            } else {
+                badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
+            }
+
+            let pago = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia);
+            let montoDeuda = pago ? pago.monto : cliente.monto;
+            saldoPendiente += parseFloat(montoDeuda);
+
+            let diaCobro = cliente.dia;
+            let textoFecha = `Cuota del ${diaCobro} de ${meses[mesVisualizado - 1]}`;
+            let textoDias = "";
+            let claseColor = "text-muted"; 
+            let botonCobroHtml = "";
+            let alertaMora = "";
+
+            // ALERTA: ¿Arrastra deudas anteriores?
+            let deudasPasadas = pagos.filter(p => p.cliente_id === cliente.id && p.pagado === false && !p.es_garantia && (p.año < añoVisualizado || (p.año === añoVisualizado && p.mes < mesVisualizado)));
+            if (deudasPasadas.length > 0) {
+                alertaMora = `<span class="d-block text-danger fw-bold mt-1" style="font-size: 0.75rem;"><i class="fas fa-exclamation-triangle"></i> Arrastra ${deudasPasadas.length} mes(es) sin pagar</span>`;
+            }
+
+            // LÓGICA DE TIEMPOS
+            if (esMesFuturo) {
+                textoDias = `, Proxima Cuota`;
+                claseColor = "text-primary fw-bold";
+                botonCobroHtml = `<i class="fas fa-lock text-muted opacity-50 fs-4" title="Mes bloqueado"></i>`;
+            } else {
+                if (esMesPasado) {
+                    textoDias = `, ¡Atrasado!`;
+                    claseColor = "text-danger fw-bold";
+                } else if (diaCobro > diaHoy) {
+                    let faltan = diaCobro - diaHoy;
+                    textoDias = `, faltan ${faltan} día${faltan > 1 ? 's' : ''}`;
+                } else if (diaCobro === diaHoy) {
+                    textoDias = `, ¡Vence hoy!`;
+                    claseColor = "text-warning fw-bold";
+                } else {
+                    let atraso = diaHoy - diaCobro;
+                    textoDias = `, atrasado por ${atraso} día${atraso > 1 ? 's' : ''}`;
+                    claseColor = "text-danger fw-bold";
+                }
+                
+                if (pago) {
+                    botonCobroHtml = `<button class="btn btn-success rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModal(${pago.id}, '${cliente.nombre}', ${montoDeuda})"><i class="fas fa-check"></i></button>`;
+                }
+            }
+
+            // --- SECCIÓN: PENDIENTES (Con el lápiz de edición inyectado aquí) ---
+            htmlPendientes += `
+            <div class="card-custom p-3 shadow-sm border-start border-4 border-warning mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <!-- Lado Izquierdo: Flexible (flex-grow-1 y min-width: 0 para que no empuje) -->
+                    <div class="flex-grow-1" style="min-width: 0; padding-right: 10px;">
+                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center flex-wrap gap-2">
+                            <span class="text-truncate" style="max-width: 100%;">${cliente.nombre}</span> 
+                            ${badgeHtml}
+                            <div class="d-inline-flex flex-nowrap">
+                                <button class="btn btn-sm btn-link text-primary p-0" onclick="abrirModalEditarCliente(${cliente.id})" title="Editar"><i class="fas fa-edit fs-5"></i></button>
+                                <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="eliminarCliente(${cliente.id}, '${cliente.nombre}')" title="Dar de baja"><i class="fas fa-times-circle fs-5"></i></button>
+                            </div>
+                        </h6>
+                        <small class="${claseColor} d-block text-wrap" style="font-size: 0.75rem;">${textoFecha}${textoDias}</small>
+                        ${alertaMora}
+                    </div>
+                    
+                    <!-- Lado Derecho: Intocable (flex-shrink-0 para que NUNCA se encoja) -->
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <span class="fw-bold text-dark fs-5">S/ ${parseFloat(montoDeuda).toFixed(2)}</span>
+                        ${botonExtraHtml}
+                        ${botonCobroHtml}
+                    </div>
+                </div>
+            </div>`;
+        } else if (item.tipo === 'garantia') {
+            let [anioGar, mesGar, diaGar] = cliente.garantia_fecha.split('-').map(Number);
+            saldoPendiente += parseFloat(cliente.garantia_monto);
+            
+            let textoFechaGar = `Garantía para el ${diaGar} de ${meses[mesGar - 1]}`;
+            let claseColorGar = "text-muted";
+            let botonCobroGar = "";
+            
+            if (añoVisualizado === anioGar && mesVisualizado === mesGar) {
+                if (diaGar > diaHoy && esMesActualReal) {
+                    let faltan = diaGar - diaHoy;
+                    textoFechaGar += `, faltan ${faltan} días`;
+                } else if (diaGar === diaHoy && esMesActualReal) {
+                    textoFechaGar += `, ¡Vence hoy!`;
+                    claseColorGar = "text-warning fw-bold";
+                } else if (diaGar < diaHoy && esMesActualReal) {
+                    let atraso = diaHoy - diaGar;
+                    textoFechaGar += `, atrasada por ${atraso} días`;
+                    claseColorGar = "text-danger fw-bold";
+                }
+            } else {
+                textoFechaGar += `, ¡Atrasada!`;
+                claseColorGar = "text-danger fw-bold";
+            }
+            
+            if (!esMesFuturo) {
+                botonCobroGar = `<button class="btn btn-primary rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModalGarantia(${cliente.id}, '${cliente.nombre}', ${cliente.garantia_monto})"><i class="fas fa-shield-alt"></i></button>`;
+            } else {
+                botonCobroGar = `<i class="fas fa-lock text-muted opacity-50 fs-4"></i>`;
+            }
+
+            htmlPendientes += `
+            <div class="card-custom p-3 shadow-sm border-start border-4 border-primary mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
+                            ${cliente.nombre} 
+                            <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 0.65rem;"><i class="fas fa-shield-alt me-1"></i>Garantía</span>
+                        </h6>
+                        <small class="${claseColorGar} d-block" style="font-size: 0.75rem;">${textoFechaGar}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fw-bold text-dark fs-5">S/ ${parseFloat(cliente.garantia_monto).toFixed(2)}</span>
+                        ${botonCobroGar}
+                    </div>
+                </div>
+            </div>`;
         }
     });
 
@@ -951,102 +997,6 @@ function guardarNuevoApunte() {
 }
 
 function renderizarApuntes() {
-    let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-    let html = "";
-    
-    if (apuntes.length === 0) {
-        html = '<div class="text-center text-white-50 my-5"><i class="fas fa-clipboard-list fs-1 mb-3"></i><p>Aún no tienes listas de apuntes.</p></div>';
-    } else {
-        apuntes.slice().reverse().forEach(apunte => {
-            let itemsHtml = "";
-            let totalSuma = 0;
-            let esCuentas = apunte.tipo !== 'simple'; 
-
-            apunte.items.forEach(item => {
-                let tachado = item.chequeado ? 'text-decoration-line-through text-muted' : 'text-dark fw-bold';
-                let checkIcon = item.chequeado ? 'fa-check-square text-success' : 'fa-square text-muted';
-                
-                let infoExtraHtml = "";
-                
-                if (esCuentas) {
-                    let cantidad = item.cantidad || 1;
-                    let valor = item.valor || 0;
-                    let subtotal = cantidad * valor;
-                    if (item.chequeado) totalSuma += subtotal;
-                    
-                    let textoCant = cantidad > 1 ? `<small class="text-muted me-1">${cantidad}x</small>` : '';
-                    infoExtraHtml = `<span class="${tachado}" style="min-width: 70px; text-align: right;">${textoCant}S/ ${subtotal.toFixed(2)}</span>`;
-                }
-
-                // Aquí conectamos el lápiz con el nuevo Modal
-                itemsHtml += `
-                <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
-                    <div class="d-flex align-items-center gap-2 overflow-hidden" onclick="toggleCheckItem(${apunte.id}, ${item.id})" style="cursor: pointer; flex-grow: 1;">
-                        <i class="far ${checkIcon} fs-4"></i>
-                        <span class="${tachado} text-truncate" style="font-size: 0.95rem;">${item.texto}</span>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        ${infoExtraHtml}
-                        <button class="btn btn-link text-primary p-0 ms-2" onclick="abrirModalEditarItem(${apunte.id}, ${item.id}, ${esCuentas})" title="Editar"><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-link text-danger p-0 ms-2" onclick="eliminarItemApunte(${apunte.id}, ${item.id})" title="Borrar"><i class="fas fa-times"></i></button>
-                    </div>
-                </div>`;
-            });
-            
-            let formIngresoHtml = "";
-            if (esCuentas) {
-                formIngresoHtml = `
-                <form onsubmit="agregarItemApunte(event, ${apunte.id}, 'cuentas')" class="d-flex gap-2 mb-3 mt-3">
-                    <input type="text" id="nuevo-texto-${apunte.id}" class="form-control form-control-sm bg-light border-0" placeholder="Ej: Gaseosa" required style="flex-grow: 1;">
-                    <input type="number" step="1" min="1" id="nuevo-cant-${apunte.id}" class="form-control form-control-sm bg-light border-0 px-1 text-center" placeholder="Cant" style="width: 50px;">
-                    <input type="number" step="0.01" id="nuevo-valor-${apunte.id}" class="form-control form-control-sm bg-light border-0 px-1" placeholder="S/ Precio" style="width: 70px;" required>
-                    <button type="submit" class="btn btn-sm btn-success rounded-circle" style="width: 30px; height: 30px; padding: 0; flex-shrink: 0;"><i class="fas fa-plus"></i></button>
-                </form>`;
-            } else {
-                formIngresoHtml = `
-                <form onsubmit="agregarItemApunte(event, ${apunte.id}, 'simple')" class="d-flex gap-2 mb-3 mt-3">
-                    <input type="text" id="nuevo-texto-${apunte.id}" class="form-control form-control-sm bg-light border-0" placeholder="Añadir apunte..." required>
-                    <button type="submit" class="btn btn-sm btn-success rounded-circle" style="width: 30px; height: 30px; padding: 0; flex-shrink: 0;"><i class="fas fa-plus"></i></button>
-                </form>`;
-            }
-            
-            let totalHtml = esCuentas ? `
-                <div class="text-end border-top pt-2 mt-2">
-                    <small class="text-muted text-uppercase fw-bold" style="font-size: 0.7rem;">Suma de marcados:</small>
-                    <h4 class="text-success fw-bold m-0 lh-1">S/ ${totalSuma.toFixed(2)}</h4>
-                </div>` : '';
-
-            let iconoTitulo = esCuentas ? 'fa-calculator' : 'fa-list-ul';
-
-            // REUBICACIÓN: El doble check ahora es un botón a la izquierda, encima de los ítems
-            html += `
-            <div class="card-custom p-3 shadow-sm mb-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="d-flex align-items-center gap-2">
-                        <i class="fas ${iconoTitulo} text-primary" style="font-size: 0.9rem;"></i>
-                        <h5 class="fw-bold text-primary m-0 text-uppercase" style="font-size: 1.1rem;">${apunte.titulo}</h5>
-                    </div>
-                    <button class="btn btn-sm btn-outline-danger border-0" onclick="eliminarApunte(${apunte.id})" title="Borrar lista completa"><i class="fas fa-trash fs-5"></i></button>
-                </div>
-                
-                <div class="d-flex align-items-center mb-3 pb-2 border-bottom">
-                    <button class="btn btn-sm btn-link text-success p-0 text-decoration-none d-flex align-items-center gap-2" onclick="toggleTodosApunte(${apunte.id})" title="Marcar/Desmarcar todos">
-                        <i class="fas fa-check-double fs-4"></i> <span class="fw-bold small text-dark">Check General</span>
-                    </button>
-                </div>
-
-                <div class="mb-2">
-                    ${itemsHtml}
-                </div>
-                
-                ${formIngresoHtml}
-                ${totalHtml}
-            </div>`;
-        });
-    }
-    
-    document.getElementById('contenedor-apuntes').innerHTML = html;
-}function renderizarApuntes() {
     let apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
     let html = "";
     
