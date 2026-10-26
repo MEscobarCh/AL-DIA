@@ -2,80 +2,45 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ALDia - App</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1E4B8F">
+    <meta name="theme-color" content="#1a3a8a">
     <link href="bootstrap.min.css" rel="stylesheet">
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <link rel="stylesheet" href="css/all.min.css">
     <style>
-        /* ==========================================
-           PALETA C — Cálida / Confianza cercana
-           Tokens de diseño de ALDia
-        ========================================== */
+        /* PALETA DE COLORES ARMÓNICA (CORREGIDA) */
         :root {
-            --color-primary: #1E4B8F;
-            --color-primary-dark: #153563;
-            --color-primary-light: #DCE7F7;
-            --color-secondary: #0F766E;
-            --color-accent: #F97316;
-            --color-accent-dark: #C2410C;
-
-            --color-background: #F8F7F4;
-            --color-background-alt: #EFEDE7;
-            --color-surface: #FFFFFF;
-
-            --color-text: #292524;
-            --color-text-secondary: #78716C;
-            --color-border: #E7E4DD;
-
-            --color-focus: #F97316;
-
-            --color-success: #15803D;
-            --color-success-bg: #DCFCE7;
-            --color-warning: #B45309;
-            --color-warning-bg: #FEF3C7;
-            --color-error: #B91C1C;
-            --color-error-bg: #FEE2E2;
-            --color-info: #0369A1;
-            --color-info-bg: #E0F2FE;
-
-            /* Alias retrocompatibles: mantienen el resto del CSS/JS funcionando
-               sin tener que renombrar cada referencia existente */
-            --brand-blue: var(--color-primary);
-            --brand-blue-hover: var(--color-primary-dark);
-            --bs-primary-rgb: 30, 75, 143;
-
-            --bg-light: var(--color-background-alt);
-            --text-main: var(--color-text);
-            --text-muted: var(--color-text-secondary);
-
-            --success-color: var(--color-success);
-            --success-bg: var(--color-success-bg);
-            --danger-color: var(--color-error);
-            --warning-color: var(--color-warning);
+            --brand-blue: #1a3a8a; /* Tu azul principal intacto */
+            --brand-blue-hover: #122a66; /* Un tono más oscuro para botones */
+            
+            /* CLAVE: RGB de tu azul para que las opacidades funcionen perfecto */
+            --bs-primary-rgb: 26, 58, 138; 
+            
+            --bg-light: #f8fafc; 
+            --text-main: #334155; 
+            --text-muted: #64748b; 
+            
+            --success-color: #10b981; 
+            --success-bg: #d1fae5; 
+            --danger-color: #ef4444; 
+            --warning-color: #f59e0b; 
         }
 
-        body { background-color: var(--color-background); color: var(--color-text); font-family: 'Segoe UI', sans-serif; padding-bottom: 80px; }
-
-        *:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-
-        /* El fondo general dejó de ser azul; los textos que viven dentro de
-           contenedores bg-primary necesitan color blanco explícito */
-        .bg-primary, .bg-primary #mes-actual-display { color: #fff; }
+        body { background-color: var(--brand-blue); color: white; font-family: 'Segoe UI', sans-serif; padding-bottom: 80px; }
         
         .card-custom { background: white; border-radius: 15px; color: var(--text-main); border: none; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .stat-card { padding: 20px; height: 100%; border-radius: 15px; }
         
+        /* Tarjeta de Saldo Neto (Cristalizada para que destaque sobre tu fondo azul) */
+        .text-white.stat-card { background: rgba(255, 255, 255, 0.1) !important; border: 1px solid rgba(255, 255, 255, 0.2); }
+
         .text-recaudado { color: var(--success-color); font-weight: bold; font-size: 1.8rem; }
         .text-pendiente { color: var(--warning-color); font-weight: bold; font-size: 1.5rem; }
         
-        .pago-item { background: var(--bg-light); border-radius: 12px; padding: 15px; margin-bottom: 10px; color: var(--text-main); display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--color-border); }
+        .pago-item { background: var(--bg-light); border-radius: 12px; padding: 15px; margin-bottom: 10px; color: var(--text-main); display: flex; align-items: center; justify-content: space-between; border: 1px solid #e2e8f0; }
         
-        .badge-ref { background-color: var(--color-primary-light); color: var(--brand-blue); font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; text-transform: uppercase; font-weight: bold; }
+        .badge-ref { background-color: #e0e7ff; color: var(--brand-blue); font-size: 0.8rem; padding: 4px 8px; border-radius: 5px; text-transform: uppercase; font-weight: bold; }
         
         .btn-check-pago { color: var(--success-color); background: var(--success-bg); border-radius: 50%; width: 40px; height: 40px; transition: 0.3s; cursor: pointer; display: flex; align-items: center; justify-content: center; border: none; }
         .btn-check-pago:hover, .btn-check-pago:active { background: var(--success-color); color: white; }
@@ -110,99 +75,17 @@
         .btn-primary:hover { background-color: var(--brand-blue-hover); border-color: var(--brand-blue-hover); }
         
         .btn-outline-primary { color: var(--brand-blue); border-color: var(--brand-blue); }
-                .btn-outline-primary:hover { background-color: var(--brand-blue); color: white; }
-
-                /* ==========================================
-                REEMPLAZO DE COLORES DE ESTADO (Paleta C)
-                ========================================== */
-                .text-warning { color: var(--color-warning) !important; }
-                .text-info { color: var(--color-info) !important; }
-                .text-secondary { color: var(--color-secondary) !important; }
-
-                .bg-success { background-color: var(--color-success) !important; color: #fff !important; }
-                .bg-danger { background-color: var(--color-error) !important; color: #fff !important; }
-                .bg-warning { background-color: var(--color-warning-bg) !important; color: var(--color-text) !important; }
-                .bg-info { background-color: var(--color-info-bg) !important; color: var(--color-text) !important; }
-                .bg-dark { background-color: var(--color-text) !important; }
-
-                .btn-success { background-color: var(--color-success); border-color: var(--color-success); color: #fff; }
-                .btn-success:hover { background-color: #116430; border-color: #116430; }
-
-                .btn-danger { background-color: var(--color-error); border-color: var(--color-error); color: #fff; }
-                .btn-danger:hover { background-color: #991616; border-color: #991616; }
-
-                .btn-warning { background-color: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-                .btn-warning:hover { background-color: var(--color-accent-dark); border-color: var(--color-accent-dark); }
-
-                .btn-outline-success { color: var(--color-success); border-color: var(--color-success); }
-                .btn-outline-success:hover { background-color: var(--color-success); color: #fff; }
-
-                .btn-outline-dark { color: var(--color-text); border-color: var(--color-text); }
-                .btn-outline-dark:hover { background-color: var(--color-text); color: #fff; }
-
-                .btn-outline-secondary { color: var(--color-text-secondary); border-color: var(--color-border); }
-                .btn-outline-secondary:hover { background-color: var(--color-background-alt); color: var(--color-text); }
-
-                .border-success { border-color: var(--color-success) !important; }
-                .border-danger { border-color: var(--color-error) !important; }
-                .border-warning { border-color: var(--color-warning) !important; }
-                .border-secondary { border-color: var(--color-border) !important; }
-
-                .alert-danger { background-color: var(--color-error-bg); color: var(--color-error); border-color: var(--color-error); }
-
-                .form-check-input:checked { background-color: var(--color-primary); border-color: var(--color-primary); }
-                .nav-pills .nav-link.active { background-color: var(--color-primary) !important; }
-                
-                /* ==========================================
-                FIX: ÁREA SEGURA PARA BOTONES DEL CELULAR
-                ========================================== */
-                .bottom-nav {
-                    padding-bottom: calc(10px + env(safe-area-inset-bottom, 20px)) !important;
-                }
-                body {
-                    padding-bottom: calc(85px + env(safe-area-inset-bottom, 20px)) !important;
-                }
-                /* Forzar texto blanco en las barras de Ingresos y Egresos del Historial Financiero */
-                #lista-historial-agrupado .bg-success, 
-                #lista-historial-agrupado .bg-success * {
-                    color: #ffffff !important;
-                }
-
-                #lista-historial-agrupado .bg-danger, 
-                #lista-historial-agrupado .bg-danger * {
-                    color: #ffffff !important;
-                }
+        .btn-outline-primary:hover { background-color: var(--brand-blue); color: white; }
+        
     </style>
 </head>
 <body>
 
-        <!-- PANTALLA DE LOGIN -->
-        <div id="pantalla-login" class="d-flex align-items-center justify-content-center vh-100" style="background-color: var(--color-primary);">
-            <div class="text-center bg-white p-5 rounded-4 shadow-lg" style="max-width: 400px; width: 90%;">
-                <h1 class="fw-bold mb-2 text-primary">💰 ALDia</h1>
-                <p class="text-muted mb-4 small">Inicia sesión para gestionar tus finanzas en la nube</p>
-                
-                <button class="btn btn-outline-dark w-100 fw-bold py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm" onclick="iniciarSesionGoogle()">
-                    <img src="https://img.icons8.com/color/24/000000/google-logo.png" alt="Google">
-                    Continuar con Google
-                </button>
-                <button type="button" class="btn btn-outline-secondary w-100 mt-3" onclick="entrarComoInvitado()">
-                    <i class="fas fa-user-secret me-2"></i> Continuar sin cuenta
-                </button>
-            </div>
-        </div>
-
-        <!-- CONTENEDOR DE LA APLICACIÓN (Oculto inicialmente) -->
-        <div id="app-principal" class="d-none">
-<div id="banner-offline" class="bg-warning text-dark text-center py-2 fw-bold shadow-sm" style="display: none; font-size: 0.85rem; z-index: 1050; position: relative;">
-    <i class="fas fa-exclamation-triangle me-1"></i> Modo Local: Tus datos no están en la nube.
-    <button class="btn btn-sm btn-dark ms-2 py-0 px-2" onclick="location.reload()">Proteger datos</button>
-</div>
 <div class="container py-4 pantalla activa" id="vista-dashboard">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold m-0">💰 ALDia</h2>
         <div class="d-flex align-items-center bg-primary rounded-pill shadow-sm overflow-hidden">
-            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i>   </button>
+            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i></button>
             <div class="px-2 py-1 small fw-bold" id="mes-actual-display" style="min-width: 100px; text-align: center;">Cargando...</div>
             <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(1)"><i class="fas fa-chevron-right"></i></button>
         </div>
@@ -386,7 +269,7 @@
     </div>
 
     <div id="lista-agenda">
-        <div class="text-center text-muted my-3"><small><i class="fas fa-spinner fa-spin"></i> Cargando agenda...</small></div>
+        <div class="text-center text-white-50 my-3"><small><i class="fas fa-spinner fa-spin"></i> Cargando agenda...</small></div>
     </div>
 </div>
 
@@ -399,15 +282,8 @@
 
 <div class="container py-4 pantalla" id="vista-gestion">
     <h3 class="fw-bold mb-4">Gestión</h3>
-    <div id="seccion-cuenta-gestion" class="card-custom p-4 border border-secondary border-opacity-25 mb-4 text-center">
-        <h5 class="fw-bold text-dark mb-1"><i class="fas fa-user-circle me-2 text-primary"></i>Mi Cuenta</h5>
-        <p class="text-muted small mb-3">Conectado a la nube de Google.</p>
-        <button onclick="cerrarSesion()" class="btn btn-outline-dark fw-bold w-100 rounded-pill">
-            <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión
-        </button>
-    </div>
     
-    <div class="card-custom p-4 border border-success border-2 mb-4" style="background-color: var(--color-success-bg);">
+    <div class="card-custom p-4 border border-success border-2 mb-4" style="background-color: #f0fdf4;">
         <h5 class="fw-bold text-primary mb-3"><i class="fas fa-database me-2"></i>Gestión de Datos</h5>
         <div class="mb-4">
             <h6 class="fw-bold text-dark small">Crear Copia de Seguridad</h6>
@@ -445,12 +321,12 @@
             <button onclick="document.getElementById('input-importar').click()" class="btn btn-outline-primary fw-bold w-100 rounded-pill"><i class="fas fa-upload me-2"></i>Subir Archivo de Respaldo</button>
         </div>
     </div>
-    <div class="card-custom p-4 border border-warning border-2 mb-4" style="background-color: var(--color-warning-bg);">
-        <h5 class="fw-bold mb-3" style="color: var(--color-warning) !important;"><i class="fas fa-life-ring me-2"></i> Salvavidas</h5>
+    <div class="card-custom p-4 border border-warning border-2 mb-4" style="background-color: #fffbeb;">
+        <h5 class="text-warning fw-bold mb-3" style="color: #d97706 !important;"><i class="fas fa-life-ring me-2"></i> Salvavidas</h5>
         <p class="text-muted small mb-3">Si eliminaste a un cliente o borraste un historial por error y el aviso desapareció, usa este botón para regresar el tiempo a la última acción.</p>
         <button onclick="ejecutarDeshacerManual()" class="btn btn-warning fw-bold w-100 text-dark"><i class="fas fa-undo me-2"></i> Deshacer Último Borrado</button>
     </div>
-    <div class="card-custom p-4 border border-danger border-2 text-center" style="background-color: var(--color-error-bg);">
+    <div class="card-custom p-4 border border-danger border-2 text-center" style="background-color: #fff5f5;">
         <h5 class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-2"></i> Zona de Peligro</h5>
         
         <p class="text-muted small mb-3 mt-3">Borrará el historial de recibos y pondrá el contador en S/ 0.00.</p>
@@ -745,6 +621,6 @@
         </div>
     </div>
 </div>
-</div>
+
 </body>
 </html>
