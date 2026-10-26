@@ -695,36 +695,122 @@ function calcularGarantiaDevolver() {
     }
 }
 
-// --- LA FUNCIÓN DE ARRANCAR LA HOJA ---
-function reiniciarTotales() {
+// ==========================================
+// --- MODAL DE BORRADO SELECTIVO ---
+// ==========================================
+let modalBorradoSelectivoInstancia = null;
+
+function abrirModalBorradoSelectivo() {
+    let chkRecibos = document.getElementById('del-chk-recibos');
+    let chkEgresos = document.getElementById('del-chk-egresos');
+    let chkApuntes = document.getElementById('del-chk-apuntes');
+    let chkClientes = document.getElementById('del-chk-clientes');
+
+    if (chkRecibos) chkRecibos.checked = false;
+    if (chkEgresos) chkEgresos.checked = false;
+    if (chkApuntes) chkApuntes.checked = false;
+    if (chkClientes) chkClientes.checked = false;
+
+    let modalEl = document.getElementById('modalBorradoSelectivo');
+    if (!modalBorradoSelectivoInstancia && modalEl) {
+        modalBorradoSelectivoInstancia = new bootstrap.Modal(modalEl);
+    }
+    if (modalBorradoSelectivoInstancia) {
+        modalBorradoSelectivoInstancia.show();
+    }
+}
+
+function ejecutarBorradoSelectivo() {
+    let chkRecibos = document.getElementById('del-chk-recibos');
+    let chkEgresos = document.getElementById('del-chk-egresos');
+    let chkApuntes = document.getElementById('del-chk-apuntes');
+    let chkClientes = document.getElementById('del-chk-clientes');
+
+    let borrarRecibos = chkRecibos ? chkRecibos.checked : false;
+    let borrarEgresos = chkEgresos ? chkEgresos.checked : false;
+    let borrarApuntes = chkApuntes ? chkApuntes.checked : false;
+    let borrarClientes = chkClientes ? chkClientes.checked : false;
+
+    if (!borrarRecibos && !borrarEgresos && !borrarApuntes && !borrarClientes) {
+        alert("⚠️ Selecciona al menos una categoría para eliminar.");
+        return;
+    }
+
+    let modulos = [];
+    if (borrarRecibos) modulos.push("• Historial de Recibos Pagados");
+    if (borrarEgresos) modulos.push("• Historial de Egresos");
+    if (borrarApuntes) modulos.push("• Mis Apuntes");
+    if (borrarClientes) modulos.push("• Todos los Clientes y Deudas Pendientes");
+
+    let mensajeConfirm = "⚠️ ¿Confirmas la eliminación de los siguientes elementos?\n\n" + 
+        modulos.join('\n') + 
+        "\n\n(Podrás deshacer esta acción inmediatamente usando el Salvavidas).";
+
+    if (!confirm(mensajeConfirm)) {
+        return;
+    }
+
+    // 1. Guardar snapshot de seguridad antes de modificar nada
+    guardarSnapshot();
+
+    // 2. Ejecutar borrado según selección
     let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    
-    // Elimina del registro todos los que tengan pagado = true. 
-    // Las deudas pendientes (pagado = false) se salvan.
+
+    if (borrarClientes && borrarRecibos) {
+        localStorage.setItem('aldia_clientes', JSON.stringify([]));
+        localStorage.setItem('aldia_pagos', JSON.stringify([]));
+    } else if (borrarClientes) {
+        localStorage.setItem('aldia_clientes', JSON.stringify([]));
+        localStorage.setItem('aldia_pagos', JSON.stringify(pagos.filter(p => p.pagado === true)));
+    } else if (borrarRecibos) {
+        localStorage.setItem('aldia_pagos', JSON.stringify(pagos.filter(p => p.pagado === false)));
+    }
+
+    if (borrarEgresos) {
+        localStorage.setItem('aldia_egresos', JSON.stringify([]));
+    }
+
+    if (borrarApuntes) {
+        localStorage.setItem('aldia_apuntes', JSON.stringify([]));
+    }
+
+    // 3. Cerrar modal si está abierto
+    if (modalBorradoSelectivoInstancia) {
+        modalBorradoSelectivoInstancia.hide();
+    }
+
+    // 4. Mostrar aviso con opción de deshacer y actualizar interfaces
+    mostrarToastDeshacer("Elementos eliminados correctamente.");
+
+    renderizarDashboard();
+    renderizarEstadisticas();
+    if (typeof renderizarCalendario === 'function') renderizarCalendario();
+    if (typeof renderizarApuntes === 'function') renderizarApuntes();
+}
+
+// Funciones conservadas para retrocompatibilidad segura
+function reiniciarTotales() {
+    guardarSnapshot();
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
     pagos = pagos.filter(p => p.pagado === false);
-    
     localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+    mostrarToastDeshacer("Historial de recibos limpiado.");
     alert("✅ Historial limpiado exitosamente. Tu contador está en 0.");
     navegar('dashboard');
 }
 
-// --- NUEVA FUNCIÓN: BORRAR TODOS LOS CLIENTES ---
 function borrarTodosLosClientes() {
-    let confirmacion = confirm("🚨 ¡ADVERTENCIA EXTREMA! 🚨\n\n¿Estás absolutamente seguro de que quieres ELIMINAR A TODOS TUS CLIENTES?\n\nEsta acción no se puede deshacer y borrará todas las deudas pendientes.");
-    
+    let confirmacion = confirm("🚨 ¡ADVERTENCIA EXTREMA! 🚨\n\n¿Estás absolutamente seguro de que quieres ELIMINAR A TODOS TUS CLIENTES?\n\nEsta acción borrará todas las deudas pendientes.");
     if (confirmacion) {
-        // 1. Vaciamos la lista de clientes
+        guardarSnapshot();
         localStorage.setItem('aldia_clientes', JSON.stringify([]));
-        
-        // 2. Limpiamos los pagos pendientes para que no queden "deudas fantasma" de clientes que ya no existen
         let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-        // Solo conservamos los que YA están pagados (para que tu total histórico no se borre por accidente)
         let pagosHistoricos = pagos.filter(p => p.pagado === true);
         localStorage.setItem('aldia_pagos', JSON.stringify(pagosHistoricos));
 
+        mostrarToastDeshacer("Todos los clientes eliminados.");
         alert("¡Limpieza completada! Todos los clientes han sido eliminados.");
         
-        // Recargamos las pantallas
         renderizarDashboard();
         renderizarCalendario();
     }
@@ -833,7 +919,7 @@ function renderizarEstadisticas() {
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
-                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="revertirPago(${ing.id}, '${ing.desc.replace(/'/g, "\\'")}')" title="Eliminar / Revertir cobro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="revertirPago(${ing.id}, '${(ing.desc || '').replace(/'/g, "\\'")}')" title="Eliminar / Revertir cobro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
                         </div>
                     </div>`;
                 });
@@ -1268,13 +1354,15 @@ let modalCargaBackupInstancia = null;
 function exportarDatos() {
     let chkClientes = document.getElementById('chk-export-clientes');
     let chkPagos = document.getElementById('chk-export-pagos');
+    let chkEgresos = document.getElementById('chk-export-egresos');
     let chkApuntes = document.getElementById('chk-export-apuntes');
 
     let incluirClientes = chkClientes ? chkClientes.checked : true;
     let incluirPagos = chkPagos ? chkPagos.checked : true;
+    let incluirEgresos = chkEgresos ? chkEgresos.checked : true;
     let incluirApuntes = chkApuntes ? chkApuntes.checked : true;
 
-    if (!incluirClientes && !incluirPagos && !incluirApuntes) {
+    if (!incluirClientes && !incluirPagos && !incluirEgresos && !incluirApuntes) {
         alert("⚠️ Selecciona al menos una casilla para respaldar.");
         return;
     }
@@ -1317,7 +1405,7 @@ function exportarDatos() {
 
             // Esperar medio segundo, descargar y transformar la interfaz
             setTimeout(() => {
-                ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes);
+                ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes);
                 
                 // Mostrar éxito y el botón de aceptar
                 icono.className = 'fas fa-check-circle text-success mb-3';
@@ -1340,7 +1428,7 @@ function cerrarModalBackup() {
     }
 }
 
-function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
+function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes) {
     try {
         let exportData = {};
         
@@ -1350,7 +1438,9 @@ function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirApuntes) {
         
         if (incluirPagos) {
             exportData.pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-            // ¡NUEVO! Empaquetamos también los egresos dentro del historial financiero
+        }
+
+        if (incluirEgresos) {
             exportData.egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
         }
         
@@ -1678,7 +1768,8 @@ function guardarSnapshot() {
     let snapshot = {
         clientes: localStorage.getItem('aldia_clientes'),
         pagos: localStorage.getItem('aldia_pagos'),
-        egresos: localStorage.getItem('aldia_egresos')
+        egresos: localStorage.getItem('aldia_egresos'),
+        apuntes: localStorage.getItem('aldia_apuntes')
     };
     localStorage.setItem('aldia_undo', JSON.stringify(snapshot));
 }
@@ -1728,6 +1819,7 @@ function restaurarDesdeSnapshot(mensajeExito) {
         if(snapshot.clientes) localStorage.setItem('aldia_clientes', snapshot.clientes);
         if(snapshot.pagos) localStorage.setItem('aldia_pagos', snapshot.pagos);
         if(snapshot.egresos) localStorage.setItem('aldia_egresos', snapshot.egresos);
+        if(snapshot.apuntes) localStorage.setItem('aldia_apuntes', snapshot.apuntes);
         
         // Una vez que lo usamos exitosamente, ahora sí limpiamos la memoria
         localStorage.removeItem('aldia_undo');
@@ -1737,6 +1829,8 @@ function restaurarDesdeSnapshot(mensajeExito) {
         
         renderizarDashboard();
         renderizarEstadisticas();
+        if (typeof renderizarCalendario === 'function') renderizarCalendario();
+        if (typeof renderizarApuntes === 'function') renderizarApuntes();
         // Si estábamos en Gestión, volvemos a Inicio para que el usuario vea que volvió
         navegar('dashboard'); 
     }

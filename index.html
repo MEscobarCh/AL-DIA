@@ -327,15 +327,11 @@
         <button onclick="ejecutarDeshacerManual()" class="btn btn-warning fw-bold w-100 text-dark"><i class="fas fa-undo me-2"></i> Deshacer Último Borrado</button>
     </div>
     <div class="card-custom p-4 border border-danger border-2 text-center" style="background-color: #fff5f5;">
-        <h5 class="text-danger fw-bold"><i class="fas fa-exclamation-triangle me-2"></i> Zona de Peligro</h5>
-        
-        <p class="text-muted small mb-3 mt-3">Borrará el historial de recibos y pondrá el contador en S/ 0.00.</p>
-        <button onclick="reiniciarTotales()" class="btn btn-danger fw-bold px-4 mb-4 w-100"><i class="fas fa-trash-alt me-2"></i> Reiniciar Total a Cero</button>
-        
-        <hr class="border-danger opacity-25 my-4">
-        
-        <p class="text-muted small mb-3"><b>ELIMINARÁ A TODOS LOS CLIENTES</b> y sus deudas pendientes.</p>
-        <button onclick="borrarTodosLosClientes()" class="btn btn-outline-danger fw-bold px-4 w-100"><i class="fas fa-users-slash me-2"></i> Borrar Todos los Clientes</button>
+        <h5 class="text-danger fw-bold mb-2"><i class="fas fa-exclamation-triangle me-2"></i> Zona de Peligro</h5>
+        <p class="text-muted small mb-3">Elimina información del sistema de manera selectiva y controlada.</p>
+        <button type="button" class="btn btn-danger fw-bold w-100" onclick="abrirModalBorradoSelectivo()">
+            <i class="fas fa-trash-alt me-2"></i> Opciones de Borrado Selectivo
+        </button>
     </div>
 </div>
 
@@ -617,6 +613,65 @@
                     
                     <button type="submit" class="btn btn-primary fw-bold w-100 py-2"><i class="fas fa-save me-2"></i> Guardar Cambios</button>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DE BORRADO SELECTIVO -->
+<div class="modal fade" id="modalBorradoSelectivo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border border-dark">
+            <div class="modal-header bg-danger text-white border-bottom border-dark">
+                <h5 class="modal-title fw-bold"><i class="fas fa-trash-alt me-2"></i> Borrado Selectivo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="small text-muted mb-3">Selecciona los módulos o datos que deseas eliminar del sistema:</p>
+                
+                <div class="p-3 bg-light border border-dark mb-3">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="del-chk-recibos">
+                        <label class="form-check-label fw-bold text-dark small" for="del-chk-recibos">
+                            Historial de Recibos Pagados
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Reinicia el acumulador de ingresos a S/ 0.00 sin borrar clientes ni deudas activas.</div>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="del-chk-egresos">
+                        <label class="form-check-label fw-bold text-dark small" for="del-chk-egresos">
+                            Historial de Egresos / Gastos
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Elimina todos los egresos registrados.</div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="del-chk-apuntes">
+                        <label class="form-check-label fw-bold text-dark small" for="del-chk-apuntes">
+                            Mis Apuntes
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Elimina todas las notas y listas de apuntes.</div>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="del-chk-clientes">
+                        <label class="form-check-label fw-bold text-danger small" for="del-chk-clientes">
+                            Todos los Clientes y Deudas Pendientes
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Borra clientes y sus mensualidades pendientes. (Si no marcas historial de recibos, se conservan los pagos ya cobrados).</div>
+                    </div>
+                </div>
+
+                <div class="alert alert-warning py-2 px-3 small mb-0 border border-warning">
+                    <i class="fas fa-shield-alt me-1"></i> Se guardará un respaldo en la memoria <b>Salvavidas</b> para poder deshacer esta acción de inmediato.
+                </div>
+            </div>
+            <div class="modal-footer border-top border-dark bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-dark fw-bold btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger fw-bold btn-sm" onclick="ejecutarBorradoSelectivo()">
+                    <i class="fas fa-trash-alt me-1"></i> Ejecutar Eliminación
+                </button>
             </div>
         </div>
     </div>
