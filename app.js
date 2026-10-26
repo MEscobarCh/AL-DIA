@@ -1350,8 +1350,10 @@ function navegar(pantallaId) {
 // ==========================================
 
 let modalCargaBackupInstancia = null;
+let accionAlCerrarModal = null;
 
 function exportarDatos() {
+    accionAlCerrarModal = null;
     let chkClientes = document.getElementById('chk-export-clientes');
     let chkPagos = document.getElementById('chk-export-pagos');
     let chkEgresos = document.getElementById('chk-export-egresos');
@@ -1404,13 +1406,13 @@ function exportarDatos() {
             barra.classList.remove('progress-bar-animated'); // Detenemos la animación de las rayas
 
             // Esperar medio segundo, descargar y transformar la interfaz
-            setTimeout(() => {
-                ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes);
+            setTimeout(async () => {
+                await ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes);
                 
                 // Mostrar éxito y el botón de aceptar
                 icono.className = 'fas fa-check-circle text-success mb-3';
                 titulo.innerText = '¡Respaldo Completado!';
-                texto.innerText = 'Tu archivo se ha descargado exitosamente.';
+                texto.innerText = 'Tu archivo se ha procesado exitosamente.';
                 btnCerrar.classList.remove('d-none');
                 
             }, 500);
@@ -1426,9 +1428,14 @@ function cerrarModalBackup() {
     if (modalCargaBackupInstancia) {
         modalCargaBackupInstancia.hide();
     }
+    if (typeof accionAlCerrarModal === 'function') {
+        let callback = accionAlCerrarModal;
+        accionAlCerrarModal = null;
+        callback();
+    }
 }
 
-function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes) {
+async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes) {
     try {
         let exportData = {};
         
@@ -1450,12 +1457,33 @@ function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, inc
 
         let dataStr = JSON.stringify(exportData, null, 2);
         let blob = new Blob([dataStr], { type: "application/json" });
-        let url = URL.createObjectURL(blob);
 
         let fecha = new Date();
         let fechaStr = `${fecha.getFullYear()}-${(fecha.getMonth()+1).toString().padStart(2,'0')}-${fecha.getDate().toString().padStart(2,'0')}`;
         let fileName = `aldia_respaldo_${fechaStr}.json`;
 
+        // Intento prioritario: Web Share API con soporte de archivos (móviles / WebView APKs)
+        if (typeof File !== 'undefined' && typeof navigator !== 'undefined' && navigator.canShare) {
+            try {
+                let file = new File([blob], fileName, { type: "application/json" });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Respaldo Al Día',
+                        text: 'Archivo de respaldo de Al Día'
+                    });
+                    return; // Compartido exitosamente en la aplicación de destino
+                }
+            } catch (shareErr) {
+                if (shareErr.name === 'AbortError') {
+                    return; // El usuario canceló la hoja para compartir
+                }
+                console.warn("Fallo Web Share API, procediendo a descarga tradicional:", shareErr);
+            }
+        }
+
+        // Fallback: Descarga estándar mediante enlace <a> simulado
+        let url = URL.createObjectURL(blob);
         let linkElement = document.createElement('a');
         linkElement.href = url;
         linkElement.download = fileName;
@@ -1479,7 +1507,7 @@ function procesarImportacion(e) {
         try {
             let data = JSON.parse(event.target.result);
             if (confirm("⚠️ ¿Estás seguro de restaurar estos datos?\n\nSe combinarán con tu información actual. Te recomendamos haber descargado un backup preventivo primero.")) {
-                ejecutarRestauracion(data);
+                iniciarRestauracionConProgreso(data);
             }
         } catch (err) {
             alert("❌ El archivo no es válido o está dañado.");
@@ -1487,6 +1515,69 @@ function procesarImportacion(e) {
         e.target.value = ""; // Limpiar input
     };
     reader.readAsText(archivo);
+}
+
+function iniciarRestauracionConProgreso(data) {
+    if (!modalCargaBackupInstancia) {
+        modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
+    }
+
+    let barra = document.getElementById('barra-progreso-backup');
+    let icono = document.getElementById('icono-backup');
+    let titulo = document.getElementById('titulo-backup');
+    let texto = document.getElementById('texto-backup');
+    let btnCerrar = document.getElementById('btn-cerrar-backup');
+
+    barra.style.width = '0%';
+    barra.innerText = '0%';
+    barra.classList.add('progress-bar-animated');
+    icono.className = 'fas fa-spinner fa-spin text-primary mb-3';
+    titulo.innerText = 'Restaurando tu información...';
+    texto.innerText = 'Combinando clientes, recibos, egresos y apuntes de forma segura...';
+    btnCerrar.classList.add('d-none');
+
+    modalCargaBackupInstancia.show();
+
+    // Guardar snapshot de seguridad antes de modificar nada
+    guardarSnapshot();
+
+    // Callback al presionar el botón Aceptar
+    accionAlCerrarModal = () => {
+        location.reload();
+    };
+
+    let progreso = 0;
+    let intervalo = setInterval(() => {
+        progreso += Math.floor(Math.random() * 15) + 10;
+
+        if (progreso >= 100) {
+            progreso = 100;
+            clearInterval(intervalo);
+
+            barra.style.width = '100%';
+            barra.innerText = '100%';
+            barra.classList.remove('progress-bar-animated');
+
+            setTimeout(() => {
+                try {
+                    ejecutarRestauracion(data);
+                    icono.className = 'fas fa-check-circle text-success mb-3';
+                    titulo.innerText = '¡Restauración Completada!';
+                    texto.innerText = 'Se han procesado tus datos exitosamente. Presiona Aceptar para aplicar los cambios.';
+                    btnCerrar.classList.remove('d-none');
+                } catch (err) {
+                    icono.className = 'fas fa-exclamation-triangle text-danger mb-3';
+                    titulo.innerText = 'Error al Restaurar';
+                    texto.innerText = 'Ocurrió un inconveniente: ' + err.message;
+                    accionAlCerrarModal = null;
+                    btnCerrar.classList.remove('d-none');
+                }
+            }, 400);
+        } else {
+            barra.style.width = progreso + '%';
+            barra.innerText = progreso + '%';
+        }
+    }, 180);
 }
 
 function ejecutarRestauracion(data) {
@@ -1560,8 +1651,7 @@ function ejecutarRestauracion(data) {
     localStorage.setItem('aldia_egresos', JSON.stringify(currentEgresos));
     localStorage.setItem('aldia_apuntes', JSON.stringify(currentApuntes));
 
-    alert("✅ ¡Restauración exitosa!\nSe han procesado clientes, recibos, egresos y apuntes de forma segura.");
-    location.reload(); 
+    return true;
 }
 
 function toggleMetodoPagoInicial() {
