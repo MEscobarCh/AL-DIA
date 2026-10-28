@@ -424,6 +424,7 @@ function procesarPago() {
             let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
             pagos.push({
                 id: Date.now(),
+                fecha_pago_real: Date.now(),
                 cliente_id: cliente.id,
                 mes: mesActual,
                 año: añoActual,
@@ -443,6 +444,7 @@ function procesarPago() {
         if(index !== -1) {
             pagos[index].pagado = true;
             pagos[index].metodo = metodo;
+            pagos[index].fecha_pago_real = Date.now();
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
         }
     }
@@ -551,6 +553,7 @@ function guardarNuevoCliente(e) {
     if (montoGarantia > 0 && pagadaGarantia) {
         pagos.push({
             id: Date.now() + 500,
+            fecha_pago_real: Date.now(),
             cliente_id: nCli.id,
             mes: mesActual,
             año: añoActual,
@@ -576,6 +579,7 @@ function guardarNuevoCliente(e) {
 
             pagos.push({
                 id: Date.now() + i,
+                fecha_pago_real: Date.now(),
                 cliente_id: nCli.id,
                 mes: mesCobro,
                 año: añoCobro,
@@ -841,20 +845,15 @@ function renderizarEstadisticas() {
         let colorBadge = tipoServicio === 'streaming' ? 'bg-dark text-white' : 'bg-primary bg-opacity-10 text-primary';
         let badgeHtml = `<span class="badge ${colorBadge} rounded-pill ms-2" style="font-size: 0.65rem;">${icono} ${referencia}</span>`;
 
-        // Extraer la Fecha y Hora exactas del Pago 
-        let fechaPagoDate = new Date(pago.id);
-        let fechaStr = "";
-        
-        if(fechaPagoDate.getTime() > 1600000000000) { 
-            let d = fechaPagoDate.getDate().toString().padStart(2, '0');
-            let m = (fechaPagoDate.getMonth() + 1).toString().padStart(2, '0');
-            let y = fechaPagoDate.getFullYear();
-            let hrs = fechaPagoDate.getHours().toString().padStart(2, '0');
-            let mins = fechaPagoDate.getMinutes().toString().padStart(2, '0');
-            fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
-        } else {
-            fechaStr = `Mes ${pago.mes}/${pago.año}`;
-        }
+        // Extraer la Fecha y Hora exactas para TODOS los ingresos (prioridad a fecha_pago_real)
+        const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
+        const fechaPago = new Date(Number(timestampBase));
+        let d = fechaPago.getDate().toString().padStart(2, '0');
+        let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
+        let y = fechaPago.getFullYear();
+        let hrs = fechaPago.getHours().toString().padStart(2, '0');
+        let mins = fechaPago.getMinutes().toString().padStart(2, '0');
+        let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
 
         historialAgrupado[key].ingresos.push({ 
             id: pago.id, 
@@ -872,11 +871,20 @@ function renderizarEstadisticas() {
         let key = `${egr.año}-${String(egr.mes).padStart(2, '0')}`;
         if (!historialAgrupado[key]) historialAgrupado[key] = { mes: egr.mes, año: egr.año, ingresos: [], egresos: [] };
         
-        // Extraemos la fecha del ID de creación del egreso
-        let fechaEgresoDate = new Date(egr.id);
+        // Extraemos la fecha del ID de creación del egreso o propiedad fecha
+        let fechaEgresoDate = new Date(egr.id || egr.fecha);
         let fechaStrEgr = "";
         
-        if(fechaEgresoDate.getTime() > 1600000000000) { 
+        if (egr.fecha && typeof egr.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(egr.fecha)) {
+            let [y, m, d] = egr.fecha.split('-');
+            if (fechaEgresoDate && !isNaN(fechaEgresoDate.getTime()) && fechaEgresoDate.getTime() > 1600000000000) {
+                let hrs = fechaEgresoDate.getHours().toString().padStart(2, '0');
+                let mins = fechaEgresoDate.getMinutes().toString().padStart(2, '0');
+                fechaStrEgr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+            } else {
+                fechaStrEgr = `${d}/${m}/${y}`;
+            }
+        } else if (!isNaN(fechaEgresoDate.getTime()) && fechaEgresoDate.getTime() > 1600000000000) { 
             let d = fechaEgresoDate.getDate().toString().padStart(2, '0');
             let m = (fechaEgresoDate.getMonth() + 1).toString().padStart(2, '0');
             let y = fechaEgresoDate.getFullYear();
@@ -919,7 +927,7 @@ function renderizarEstadisticas() {
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
-                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="revertirPago(${ing.id}, '${(ing.desc || '').replace(/'/g, "\\'")}')" title="Eliminar / Revertir cobro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarPagoHistorial(${ing.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
                         </div>
                     </div>`;
                 });
@@ -936,7 +944,7 @@ function renderizarEstadisticas() {
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-danger fw-bold small">- S/ ${parseFloat(egr.monto).toFixed(2)}</span>
-                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgreso(${egr.id})" title="Eliminar gasto"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgresoHistorial(${egr.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
                         </div>
                     </div>`;
                 });
@@ -1581,56 +1589,37 @@ function iniciarRestauracionConProgreso(data) {
 }
 
 function ejecutarRestauracion(data) {
-    let currentClientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-    let currentPagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-    let currentEgresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+    localStorage.removeItem('aldia_clientes');
+    localStorage.removeItem('aldia_pagos');
+    localStorage.removeItem('aldia_egresos');
+
+    let currentClientes = [];
+    let currentPagos = [];
+    let currentEgresos = [];
     let currentApuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
 
     let mapeoNuevosIds = {}; // Para reconectar pagos si el ID del cliente cambia
 
-    // 1. RESTAURAR CLIENTES (Evitando choques)
+    // 1. RESTAURAR CLIENTES
     if (data.clientes) {
         data.clientes.forEach(impCli => {
-            let existe = currentClientes.find(c => c.id === impCli.id || (c.nombre === impCli.nombre && c.apellido === impCli.apellido));
-            
-            if (existe) {
-                let decision = confirm(`El cliente "${impCli.nombre}" ya existe.\n\n• ACEPTAR: Combinar recibos con el actual.\n• CANCELAR: Crear como cliente nuevo (duplicado).`);
-                if (decision) {
-                    mapeoNuevosIds[impCli.id] = existe.id;
-                } else {
-                    let nuevoId = Date.now() + Math.floor(Math.random() * 10000);
-                    currentClientes.push({ ...impCli, id: nuevoId, nombre: impCli.nombre + " (Importado)" });
-                    mapeoNuevosIds[impCli.id] = nuevoId;
-                }
-            } else {
-                currentClientes.push(impCli);
-                mapeoNuevosIds[impCli.id] = impCli.id;
-            }
+            currentClientes.push(impCli);
+            mapeoNuevosIds[impCli.id] = impCli.id;
         });
     }
 
-    // 2. RESTAURAR PAGOS (Conexión inteligente)
+    // 2. RESTAURAR PAGOS (Reemplazo total sin fusionar con caché previo)
     if (data.pagos) {
-        data.pagos.forEach(pImp => {
-            let idDestino = mapeoNuevosIds[pImp.cliente_id] || pImp.cliente_id;
-            // Evitar duplicar el mismo recibo exacto
-            let pagoExiste = currentPagos.find(p => p.cliente_id === idDestino && p.mes === pImp.mes && p.año === pImp.año && (p.es_garantia === pImp.es_garantia));
-            
-            if (!pagoExiste) {
-                currentPagos.push({ ...pImp, id: Date.now() + Math.floor(Math.random() * 100000), cliente_id: idDestino });
-            }
+        data.pagos.forEach(pagoImportado => {
+            let idDestino = mapeoNuevosIds[pagoImportado.cliente_id] || pagoImportado.cliente_id;
+            currentPagos.push({ ...pagoImportado, id: pagoImportado.id, cliente_id: idDestino });
         });
     }
 
-    // 3. RESTAURAR EGRESOS (Seguridad Anti-Clones)
+    // 3. RESTAURAR EGRESOS (Reemplazo total sin fusionar con caché previo)
     if (data.egresos) {
-        data.egresos.forEach(eImp => {
-            // Busca si ya existe un gasto con el mismo ID, o idéntico en fecha, motivo y monto
-            let egresoExiste = currentEgresos.find(e => e.id === eImp.id || (e.fecha === eImp.fecha && e.motivo === eImp.motivo && parseFloat(e.monto) === parseFloat(eImp.monto)));
-            if (!egresoExiste) {
-                // Le asignamos un nuevo ID único por seguridad
-                currentEgresos.push({ ...eImp, id: Date.now() + Math.floor(Math.random() * 100000) });
-            }
+        data.egresos.forEach(egresoImportado => {
+            currentEgresos.push({ ...egresoImportado, id: egresoImportado.id });
         });
     }
 
@@ -2058,3 +2047,22 @@ function guardarEdicionCliente(e) {
         if (typeof renderizarEstadisticas === "function") renderizarEstadisticas();
     }
 }
+
+// --- FUNCIONES PARA ELIMINACIÓN DIRECTA DESDE HISTORIAL (PAPELERAS) ---
+window.eliminarPagoHistorial = function(id) {
+    if (confirm('¿Eliminar registro?')) {
+        let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+        pagos = pagos.filter(p => Number(p.id) !== Number(id));
+        localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+        location.reload();
+    }
+};
+
+window.eliminarEgresoHistorial = function(id) {
+    if (confirm('¿Eliminar registro?')) {
+        let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+        egresos = egresos.filter(e => Number(e.id) !== Number(id));
+        localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+        location.reload();
+    }
+};
