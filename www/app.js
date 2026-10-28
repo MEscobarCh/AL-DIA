@@ -552,7 +552,7 @@ function guardarNuevoCliente(e) {
     // Ingresar pago de garantía
     if (montoGarantia > 0 && pagadaGarantia) {
         pagos.push({
-            id: Date.now() + 500,
+            id: Date.now(),
             fecha_pago_real: Date.now(),
             cliente_id: nCli.id,
             mes: mesActual,
@@ -862,40 +862,62 @@ function renderizarEstadisticas() {
             badge: badgeHtml,
             monto: pago.monto, 
             metodo: pago.metodo, 
-            fechaStr: fechaStr 
+            fechaStr: fechaStr,
+            timestampReal: Number(pago.fecha_pago_real || pago.id)
         });
     });
 
-    // 2. Agrupar Egresos (NUEVA LÓGICA DE FECHAS Y HORA)
+    // 2. Agrupar Egresos (Extracción de fecha y hora unificadas)
     egresos.forEach(egr => {
         let key = `${egr.año}-${String(egr.mes).padStart(2, '0')}`;
         if (!historialAgrupado[key]) historialAgrupado[key] = { mes: egr.mes, año: egr.año, ingresos: [], egresos: [] };
         
-        // Extraemos la fecha del ID de creación del egreso o propiedad fecha
-        let fechaEgresoDate = new Date(egr.id || egr.fecha);
-        let fechaStrEgr = "";
-        
-        if (egr.fecha && typeof egr.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(egr.fecha)) {
-            let [y, m, d] = egr.fecha.split('-');
-            if (fechaEgresoDate && !isNaN(fechaEgresoDate.getTime()) && fechaEgresoDate.getTime() > 1600000000000) {
-                let hrs = fechaEgresoDate.getHours().toString().padStart(2, '0');
-                let mins = fechaEgresoDate.getMinutes().toString().padStart(2, '0');
-                fechaStrEgr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
-            } else {
-                fechaStrEgr = `${d}/${m}/${y}`;
-            }
-        } else if (!isNaN(fechaEgresoDate.getTime()) && fechaEgresoDate.getTime() > 1600000000000) { 
-            let d = fechaEgresoDate.getDate().toString().padStart(2, '0');
-            let m = (fechaEgresoDate.getMonth() + 1).toString().padStart(2, '0');
-            let y = fechaEgresoDate.getFullYear();
-            let hrs = fechaEgresoDate.getHours().toString().padStart(2, '0');
-            let mins = fechaEgresoDate.getMinutes().toString().padStart(2, '0');
-            fechaStrEgr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+        // Día, mes y año leídos de egr.fecha (con fallback a dia, mes, año numéricos)
+        let d, m, y;
+        if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
+            let partes = egr.fecha.split('-');
+            y = partes[0];
+            m = String(partes[1]).padStart(2, '0');
+            d = String(partes[2]).padStart(2, '0');
         } else {
-            fechaStrEgr = `${String(egr.dia).padStart(2, '0')}/${String(egr.mes).padStart(2, '0')}/${egr.año}`;
+            d = String(egr.dia || '01').padStart(2, '0');
+            m = String(egr.mes || '01').padStart(2, '0');
+            y = String(egr.año || new Date().getFullYear());
         }
 
-        historialAgrupado[key].egresos.push({ id: egr.id, tipo: 'egreso', desc: egr.motivo, monto: egr.monto, fechaStr: fechaStrEgr });
+        // Hora y minuto extraídos matemáticamente de new Date(Number(egr.id)) con fallback 00:00
+        let hrs = "00";
+        let mins = "00";
+        const dateId = new Date(Number(egr.id));
+        if (egr.id && !isNaN(dateId.getTime()) && Number(egr.id) > 1000000000000) {
+            hrs = dateId.getHours().toString().padStart(2, '0');
+            mins = dateId.getMinutes().toString().padStart(2, '0');
+        }
+
+        let fechaStrEgr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+
+        let timestampEgreso = Number(egr.id);
+        if (egr.fecha) {
+            // Extraer año, mes (base 0) y día desde la cadena "AAAA-MM-DD"
+            const partesFecha = egr.fecha.split('-').map(Number);
+            if (partesFecha.length === 3) {
+                const fechaBaseId = new Date(Number(egr.id));
+                const hrs = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
+                const mins = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
+                const secs = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
+                
+                timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrs, mins, secs).getTime();
+            }
+        }
+
+        historialAgrupado[key].egresos.push({ 
+            id: egr.id, 
+            tipo: 'egreso', 
+            desc: egr.motivo, 
+            monto: egr.monto, 
+            fechaStr: fechaStrEgr, 
+            timestampReal: timestampEgreso 
+        });
     });
 
     let llavesOrdenadas = Object.keys(historialAgrupado).sort((a, b) => b.localeCompare(a));
@@ -909,6 +931,9 @@ function renderizarEstadisticas() {
             let sumaIngresos = dataMes.ingresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
             let sumaEgresos = dataMes.egresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
             let neto = sumaIngresos - sumaEgresos;
+
+            historialAgrupado[key].ingresos.sort((a, b) => b.timestampReal - a.timestampReal);
+            historialAgrupado[key].egresos.sort((a, b) => b.timestampReal - a.timestampReal);
 
             let listaItemsHtml = "";
             
@@ -1785,7 +1810,7 @@ function procesarMudanza() {
             if (devolver > 0) {
                 let fechaHoy = new Date();
                 egresos.push({
-                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    id: Date.now(),
                     fecha: `${fechaHoy.getFullYear()}-${String(fechaHoy.getMonth()+1).padStart(2,'0')}-${String(fechaHoy.getDate()).padStart(2,'0')}`,
                     dia: fechaHoy.getDate(),
                     mes: fechaHoy.getMonth() + 1,
