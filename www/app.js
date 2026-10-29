@@ -13,6 +13,9 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Inicializar módulo unificado de registro dinámico (Fase 2)
     iniciarModuloRegistro();
+
+    // Inicializar listeners del historial financiero (Fase 5.0)
+    iniciarListenersHistorial();
 });
 
 // --- BASE DE DATOS LOCAL ---
@@ -894,183 +897,266 @@ function renderizarEstadisticas() {
     let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
     let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || []; 
 
-    let historialAgrupado = {};
+    // Capturar y normalizar Filtro de Fecha (Fase 5.0)
+    const inputMes = document.getElementById('filtroMesHistorial');
+    let mesFiltro, anioFiltro;
 
-    // 1. Agrupar Ingresos (Solo pagados)
-    pagos.filter(p => p.pagado).forEach(pago => {
-        let key = `${pago.año}-${String(pago.mes).padStart(2, '0')}`;
-        if (!historialAgrupado[key]) historialAgrupado[key] = { mes: pago.mes, año: pago.año, ingresos: [], egresos: [] };
-        
-        // Buscar los detalles extra del cliente
-        let cliente = clientes.find(c => c.id === pago.cliente_id);
-        let tipoServicio = (cliente && cliente.tipo_servicio === 'streaming') ? 'streaming' : 'cuarto';
-        let icono = tipoServicio === 'streaming' ? '<i class="fas fa-tv"></i>' : '<i class="fas fa-home"></i>';
-        let referencia = (cliente && cliente.ref) ? cliente.ref : (tipoServicio === 'streaming' ? 'Streaming' : 'Cuarto');
-        
-        let colorBadge = tipoServicio === 'streaming' ? 'bg-dark text-white' : 'bg-primary bg-opacity-10 text-primary';
-        let badgeHtml = `<span class="badge ${colorBadge} rounded-pill ms-2" style="font-size: 0.65rem;">${icono} ${referencia}</span>`;
-
-        // Extraer la Fecha y Hora exactas para TODOS los ingresos (prioridad a fecha_pago_real)
-        const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
-        const fechaPago = new Date(Number(timestampBase));
-        let d = fechaPago.getDate().toString().padStart(2, '0');
-        let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
-        let y = fechaPago.getFullYear();
-        let hrs = fechaPago.getHours().toString().padStart(2, '0');
-        let mins = fechaPago.getMinutes().toString().padStart(2, '0');
-        let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
-
-        historialAgrupado[key].ingresos.push({ 
-            id: pago.id, 
-            tipo: 'ingreso', 
-            desc: pago.historico, 
-            badge: badgeHtml,
-            monto: pago.monto, 
-            metodo: pago.metodo, 
-            fechaStr: fechaStr,
-            timestampReal: Number(pago.fecha_pago_real || pago.id)
-        });
-    });
-
-    // 2. Agrupar Egresos (Extracción de fecha y hora unificadas)
-    egresos.forEach(egr => {
-        let key = `${egr.año}-${String(egr.mes).padStart(2, '0')}`;
-        if (!historialAgrupado[key]) historialAgrupado[key] = { mes: egr.mes, año: egr.año, ingresos: [], egresos: [] };
-        
-        // Día, mes y año leídos de egr.fecha (con fallback a dia, mes, año numéricos)
-        let d, m, y;
-        if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
-            let partes = egr.fecha.split('-');
-            y = partes[0];
-            m = String(partes[1]).padStart(2, '0');
-            d = String(partes[2]).padStart(2, '0');
-        } else {
-            d = String(egr.dia || '01').padStart(2, '0');
-            m = String(egr.mes || '01').padStart(2, '0');
-            y = String(egr.año || new Date().getFullYear());
-        }
-
-        // Hora y minuto extraídos matemáticamente de new Date(Number(egr.id)) con fallback 00:00
-        let hrs = "00";
-        let mins = "00";
-        const dateId = new Date(Number(egr.id));
-        if (egr.id && !isNaN(dateId.getTime()) && Number(egr.id) > 1000000000000) {
-            hrs = dateId.getHours().toString().padStart(2, '0');
-            mins = dateId.getMinutes().toString().padStart(2, '0');
-        }
-
-        let fechaStrEgr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
-
-        let timestampEgreso = Number(egr.id);
-        if (egr.fecha) {
-            // Extraer año, mes (base 0) y día desde la cadena "AAAA-MM-DD"
-            const partesFecha = egr.fecha.split('-').map(Number);
-            if (partesFecha.length === 3) {
-                const fechaBaseId = new Date(Number(egr.id));
-                const hrs = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
-                const mins = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
-                const secs = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
-                
-                timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrs, mins, secs).getTime();
-            }
-        }
-
-        historialAgrupado[key].egresos.push({ 
-            id: egr.id, 
-            tipo: 'egreso', 
-            desc: egr.motivo, 
-            monto: egr.monto, 
-            fechaStr: fechaStrEgr, 
-            timestampReal: timestampEgreso 
-        });
-    });
-
-    let llavesOrdenadas = Object.keys(historialAgrupado).sort((a, b) => b.localeCompare(a));
-
-    let htmlHistorial = "";
-    if (llavesOrdenadas.length === 0) {
-        htmlHistorial = '<div class="text-center text-white-50 py-4"><p>Aún no hay movimientos en el historial.</p></div>';
+    if (inputMes && inputMes.value) {
+        const partes = inputMes.value.split('-').map(Number);
+        anioFiltro = partes[0];
+        mesFiltro = partes[1];
     } else {
-        llavesOrdenadas.forEach(key => {
-            let dataMes = historialAgrupado[key];
-            let sumaIngresos = dataMes.ingresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
-            let sumaEgresos = dataMes.egresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
-            let neto = sumaIngresos - sumaEgresos;
+        const hoy = new Date();
+        anioFiltro = hoy.getFullYear();
+        mesFiltro = hoy.getMonth() + 1;
+        if (inputMes) {
+            inputMes.value = `${anioFiltro}-${String(mesFiltro).padStart(2, '0')}`;
+        }
+    }
 
-            historialAgrupado[key].ingresos.sort((a, b) => b.timestampReal - a.timestampReal);
-            historialAgrupado[key].egresos.sort((a, b) => b.timestampReal - a.timestampReal);
+    // Capturar Filtro de Tipo (Corrección Crítica UI: select nativo)
+    const tipoFiltro = document.getElementById('filtroTipoHistorial') ? document.getElementById('filtroTipoHistorial').value : 'ambos';
 
-            let listaItemsHtml = "";
-            
-            if (dataMes.ingresos.length > 0) {
-                listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-1 px-1 text-uppercase">Ingresos Registrados</div>`;
-                dataMes.ingresos.forEach(ing => {
-                    listaItemsHtml += `
-                    <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-success d-flex justify-content-between align-items-center">
-                        <div style="max-width: 75%;">
-                            <div class="d-flex align-items-center mb-1 flex-wrap gap-1">
-                                <span class="fw-bold text-dark text-truncate">${ing.desc}</span>
-                                ${ing.badge}
-                            </div>
-                            <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-check me-1"></i>Pagado el ${ing.fechaStr}</small>
-                            <small class="text-muted d-block" style="font-size:0.7rem;"><i class="fas fa-wallet me-1"></i>Ingreso por ${ing.metodo}</small>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
-                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarPagoHistorial(${ing.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
-                        </div>
-                    </div>`;
-                });
+    let historialAgrupado = {};
+    const keySeleccionada = `${anioFiltro}-${String(mesFiltro).padStart(2, '0')}`;
+    historialAgrupado[keySeleccionada] = { mes: mesFiltro, año: anioFiltro, ingresos: [], egresos: [] };
+
+    // 1. Filtrar y Agrupar Ingresos (Solo pagados que coincidan con mes y año)
+    if (tipoFiltro === 'ambos' || tipoFiltro === 'ingresos') {
+        pagos.filter(p => {
+            if (!p.pagado) return false;
+            let pAnio = Number(p.año || p.ano);
+            let pMes = Number(p.mes);
+            if ((!pAnio || !pMes) && p.fecha_pago_real) {
+                let f = new Date(Number(p.fecha_pago_real));
+                if (!isNaN(f.getTime())) {
+                    pAnio = f.getFullYear();
+                    pMes = f.getMonth() + 1;
+                }
             }
+            return pAnio === anioFiltro && pMes === mesFiltro;
+        }).forEach(pago => {
+            // Buscar los detalles extra del cliente
+            let cliente = clientes.find(c => c.id === pago.cliente_id);
+            let tipoServicio = cliente ? cliente.tipo_servicio : 'cuarto';
+            let icono = '<i class="fas fa-home"></i>';
+            if (tipoServicio === 'streaming') icono = '<i class="fas fa-tv"></i>';
+            else if (tipoServicio === 'academia') icono = '<i class="fas fa-graduation-cap"></i>';
+            else if (tipoServicio === 'cochera') icono = '<i class="fas fa-car"></i>';
+            else if (tipoServicio === 'servicio') icono = '<i class="fas fa-concierge-bell"></i>';
 
-            if (dataMes.egresos.length > 0) {
-                listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-3 px-1 text-uppercase">Egresos Registrados</div>`;
-                dataMes.egresos.forEach(egr => {
-                    listaItemsHtml += `
-                    <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-danger d-flex justify-content-between align-items-center">
-                        <div style="max-width: 75%;">
-                            <span class="fw-bold text-dark d-block mb-1">${egr.desc}</span>
-                            <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-minus me-1"></i>Egreso el ${egr.fechaStr}</small>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-danger fw-bold small">- S/ ${parseFloat(egr.monto).toFixed(2)}</span>
-                            <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgresoHistorial(${egr.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
-                        </div>
-                    </div>`;
-                });
-            }
+            let referencia = (cliente && cliente.ref) ? cliente.ref : (tipoServicio === 'streaming' ? 'Streaming' : 'General');
+            let colorBadge = tipoServicio === 'streaming' ? 'bg-dark text-white' : 'bg-primary bg-opacity-10 text-primary';
+            let badgeHtml = `<span class="badge ${colorBadge} rounded-pill ms-2" style="font-size: 0.65rem;">${icono} ${referencia}</span>`;
 
-            htmlHistorial += `
-            <div class="card-custom p-3 shadow mb-4 border-0">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="fw-bold text-primary m-0 text-uppercase"><i class="far fa-calendar-alt me-2"></i>${meses[dataMes.mes - 1]} ${dataMes.año}</h6>
-                    <span class="badge ${neto >= 0 ? 'bg-success' : 'bg-danger'} py-2 px-3 fs-6 rounded-pill">Neto: S/ ${neto.toFixed(2)}</span>
-                </div>
-                
-                <div class="row text-center mb-3 g-2">
-                    <div class="col-6">
-                        <div class="bg-success bg-opacity-10 rounded p-2 border border-success border-opacity-25">
-                            <small class="text-success d-block fw-bold" style="font-size:0.7rem;">INGRESOS</small>
-                            <span class="text-success fw-bold">S/ ${sumaIngresos.toFixed(2)}</span>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="bg-danger bg-opacity-10 rounded p-2 border border-danger border-opacity-25">
-                            <small class="text-danger d-block fw-bold" style="font-size:0.7rem;">EGRESOS</small>
-                            <span class="text-danger fw-bold">S/ ${sumaEgresos.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="bg-light p-2 rounded-3 border border-light shadow-sm inset">
-                    ${listaItemsHtml}
-                </div>
-            </div>`;
+            // Extraer la Fecha y Hora exactas para TODOS los ingresos (prioridad a fecha_pago_real)
+            const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
+            const fechaPago = new Date(Number(timestampBase));
+            let d = fechaPago.getDate().toString().padStart(2, '0');
+            let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
+            let y = fechaPago.getFullYear();
+            let hrs = fechaPago.getHours().toString().padStart(2, '0');
+            let mins = fechaPago.getMinutes().toString().padStart(2, '0');
+            let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+
+            historialAgrupado[keySeleccionada].ingresos.push({ 
+                id: pago.id, 
+                tipo: 'ingreso', 
+                desc: pago.historico, 
+                badge: badgeHtml,
+                monto: pago.monto, 
+                metodo: pago.metodo, 
+                fechaStr: fechaStr,
+                timestampReal: Number(pago.fecha_pago_real || pago.id)
+            });
         });
     }
 
-    document.getElementById('lista-historial-agrupado').innerHTML = htmlHistorial;
+    // 2. Filtrar y Agrupar Egresos (Coincidencia con mes y año)
+    if (tipoFiltro === 'ambos' || tipoFiltro === 'egresos') {
+        egresos.forEach(egr => {
+            let d, m, y;
+            if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
+                let partes = egr.fecha.split('-');
+                y = Number(partes[0]);
+                m = Number(partes[1]);
+                d = String(partes[2]).padStart(2, '0');
+            } else {
+                d = String(egr.dia || '01').padStart(2, '0');
+                m = Number(egr.mes || mesFiltro);
+                y = Number(egr.año || anioFiltro);
+            }
+
+            if (y === anioFiltro && m === mesFiltro) {
+                let hrs = "00";
+                let mins = "00";
+                const dateId = new Date(Number(egr.id));
+                if (egr.id && !isNaN(dateId.getTime()) && Number(egr.id) > 1000000000000) {
+                    hrs = dateId.getHours().toString().padStart(2, '0');
+                    mins = dateId.getMinutes().toString().padStart(2, '0');
+                }
+
+                let fechaStrEgr = `${d}/${String(m).padStart(2, '0')}/${y} a las ${hrs}:${mins}`;
+
+                let timestampEgreso = Number(egr.id);
+                if (egr.fecha) {
+                    const partesFecha = egr.fecha.split('-').map(Number);
+                    if (partesFecha.length === 3) {
+                        const fechaBaseId = new Date(Number(egr.id));
+                        const hrsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
+                        const minsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
+                        const secsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
+                        timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrsB, minsB, secsB).getTime();
+                    }
+                }
+
+                historialAgrupado[keySeleccionada].egresos.push({ 
+                    id: egr.id, 
+                    tipo: 'egreso', 
+                    desc: egr.motivo, 
+                    monto: egr.monto, 
+                    fechaStr: fechaStrEgr, 
+                    timestampReal: timestampEgreso 
+                });
+            }
+        });
+    }
+
+    let dataMes = historialAgrupado[keySeleccionada];
+    let sumaIngresos = dataMes.ingresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
+    let sumaEgresos = dataMes.egresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
+
+    // Recalcular montos mostrados en panel superior según tipoFiltro
+    let mostrarIngresos = (tipoFiltro === 'egresos') ? 0 : sumaIngresos;
+    let mostrarEgresos = (tipoFiltro === 'ingresos') ? 0 : sumaEgresos;
+    let neto = mostrarIngresos - mostrarEgresos;
+
+    dataMes.ingresos.sort((a, b) => b.timestampReal - a.timestampReal);
+    dataMes.egresos.sort((a, b) => b.timestampReal - a.timestampReal);
+
+    let listaItemsHtml = "";
+
+    // Renderizar Ingresos si aplica
+    if (tipoFiltro !== 'egresos') {
+        if (dataMes.ingresos.length > 0) {
+            listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-1 px-1 text-uppercase">Ingresos Registrados (${dataMes.ingresos.length})</div>`;
+            dataMes.ingresos.forEach(ing => {
+                listaItemsHtml += `
+                <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-success d-flex justify-content-between align-items-center">
+                    <div style="max-width: 75%;">
+                        <div class="d-flex align-items-center mb-1 flex-wrap gap-1">
+                            <span class="fw-bold text-dark text-truncate">${ing.desc}</span>
+                            ${ing.badge}
+                        </div>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-check me-1"></i>Pagado el ${ing.fechaStr}</small>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="fas fa-wallet me-1"></i>Ingreso por ${ing.metodo}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
+                        <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarPagoHistorial(${ing.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                    </div>
+                </div>`;
+            });
+        } else if (tipoFiltro === 'ingresos') {
+            listaItemsHtml += `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay ingresos registrados en este mes.</div>`;
+        }
+    }
+
+    // Renderizar Egresos si aplica
+    if (tipoFiltro !== 'ingresos') {
+        if (dataMes.egresos.length > 0) {
+            listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-3 px-1 text-uppercase">Egresos Registrados (${dataMes.egresos.length})</div>`;
+            dataMes.egresos.forEach(egr => {
+                listaItemsHtml += `
+                <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-danger d-flex justify-content-between align-items-center">
+                    <div style="max-width: 75%;">
+                        <span class="fw-bold text-dark d-block mb-1">${egr.desc}</span>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-minus me-1"></i>Egreso el ${egr.fechaStr}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-danger fw-bold small">- S/ ${parseFloat(egr.monto).toFixed(2)}</span>
+                        <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgresoHistorial(${egr.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                    </div>
+                </div>`;
+            });
+        } else if (tipoFiltro === 'egresos') {
+            listaItemsHtml += `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay egresos registrados en este mes.</div>`;
+        }
+    }
+
+    if (tipoFiltro === 'ambos' && dataMes.ingresos.length === 0 && dataMes.egresos.length === 0) {
+        listaItemsHtml = `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay ingresos ni egresos registrados en este mes.</div>`;
+    }
+
+    let nombreMesTexto = (typeof meses !== 'undefined' && meses[mesFiltro - 1]) ? meses[mesFiltro - 1] : `Mes ${mesFiltro}`;
+
+    // Actualizar Encabezado Interno (Mes/Año y Neto)
+    const elTextoMes = document.getElementById('historial-nombre-mes');
+    if (elTextoMes) {
+        elTextoMes.textContent = `${nombreMesTexto} ${anioFiltro}`;
+    }
+    const elBadgeNeto = document.getElementById('historial-badge-neto');
+    if (elBadgeNeto) {
+        elBadgeNeto.textContent = `Neto: S/ ${neto.toFixed(2)}`;
+        elBadgeNeto.className = `badge ${neto >= 0 ? 'bg-success' : 'bg-danger'} py-2 px-3 fs-6 rounded-pill`;
+    }
+
+    // Actualizar montos en las tarjetas de resumen
+    const elResumenIng = document.getElementById('total-resumen-ingresos');
+    if (elResumenIng) elResumenIng.textContent = `S/ ${sumaIngresos.toFixed(2)}`;
+    const elResumenEgr = document.getElementById('total-resumen-egresos');
+    if (elResumenEgr) elResumenEgr.textContent = `S/ ${sumaEgresos.toFixed(2)}`;
+
+    // Lógica de Ocultamiento Dinámico y Ajuste de Columnas según Filtro
+    const colResumenIngresos = document.getElementById('colResumenIngresos');
+    const colResumenEgresos = document.getElementById('colResumenEgresos');
+
+    if (colResumenIngresos && colResumenEgresos) {
+        if (tipoFiltro === 'ingresos') {
+            colResumenEgresos.classList.add('d-none');
+            colResumenIngresos.classList.remove('d-none', 'col-6');
+            colResumenIngresos.classList.add('col-12');
+        } else if (tipoFiltro === 'egresos') {
+            colResumenIngresos.classList.add('d-none');
+            colResumenEgresos.classList.remove('d-none', 'col-6');
+            colResumenEgresos.classList.add('col-12');
+        } else {
+            colResumenIngresos.classList.remove('d-none', 'col-12');
+            colResumenIngresos.classList.add('col-6');
+            colResumenEgresos.classList.remove('d-none', 'col-12');
+            colResumenEgresos.classList.add('col-6');
+        }
+    }
+
+    // Inyectar lista de registros directamente en lista-historial-agrupado
+    const contenedorHistorial = document.getElementById('lista-historial-agrupado');
+    if (contenedorHistorial) {
+        contenedorHistorial.innerHTML = listaItemsHtml;
+    }
 }
+
+function renderizarHistorial() {
+    renderizarEstadisticas();
+}
+window.renderizarEstadisticas = renderizarEstadisticas;
+window.renderizarHistorial = renderizarHistorial;
+
+// --- LISTENERS DE FILTROS EN HISTORIAL FINANCIERO (Corrección Crítica UI) ---
+function iniciarListenersHistorial() {
+    const inputMes = document.getElementById('filtroMesHistorial');
+    if (inputMes) {
+        inputMes.addEventListener('change', renderizarHistorial);
+    }
+
+    const selectTipo = document.getElementById('filtroTipoHistorial');
+    if (selectTipo) {
+        selectTipo.addEventListener('change', renderizarHistorial);
+    }
+
+    // Renderizado inicial al arrancar
+    renderizarHistorial();
+}
+window.iniciarListenersHistorial = iniciarListenersHistorial;
 
 // --- RENDERIZADO DEL CALENDARIO (AGENDA) ---
 function renderizarCalendario() {

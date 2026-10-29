@@ -189,9 +189,51 @@
 
 <div class="container py-4 pantalla" id="vista-estadisticas">
     <h3 class="fw-bold mb-1">Historial Financiero</h3>
-    <p class="text-muted small mb-4">Resumen de ingresos y egresos por mes.</p>
+    <p class="text-muted small mb-3">Resumen de ingresos y egresos por mes.</p>
     
-    <div id="lista-historial-agrupado" class="mb-4"></div>
+    <!-- Barra de Filtros Dinámicos (Corrección Crítica UI: Select Nativo) -->
+    <div class="row g-2 mb-3">
+        <div class="col-12 col-md-5">
+            <input type="month" id="filtroMesHistorial" class="form-control fw-bold shadow-sm">
+        </div>
+        <div class="col-12 col-md-7">
+            <select id="filtroTipoHistorial" class="form-select w-100">
+                <option value="ambos" selected>Mostrar Ambos</option>
+                <option value="ingresos">Solo Ingresos</option>
+                <option value="egresos">Solo Egresos</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Tarjeta Blanca Principal del Historial Financiero -->
+    <div class="card card-custom p-3 shadow mb-4 border-0" id="tarjeta-principal-historial">
+        <!-- Encabezado interno con icono de calendario, Mes/Año y botón de Neto -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="fw-bold text-primary m-0 text-uppercase" id="historial-encabezado-mes">
+                <i class="far fa-calendar-alt me-2"></i><span id="historial-nombre-mes">Cargando...</span>
+            </h6>
+            <span class="badge bg-success py-2 px-3 fs-6 rounded-pill" id="historial-badge-neto">Neto: S/ 0.00</span>
+        </div>
+
+        <!-- Fila de Tarjetas de Resumen Reubicada Adentro de la Tarjeta Blanca -->
+        <div class="row text-center mb-3 g-2" id="filaResumenHistorial">
+            <div class="col-6" id="colResumenIngresos">
+                <div class="card bg-success bg-opacity-10 border-success text-center p-2">
+                    <small class="text-success d-block fw-bold text-truncate" style="font-size:0.68rem;">INGRESOS</small>
+                    <span class="text-success fw-bold" id="total-resumen-ingresos" style="font-size:0.95rem;">S/ 0.00</span>
+                </div>
+            </div>
+            <div class="col-6" id="colResumenEgresos">
+                <div class="card bg-danger bg-opacity-10 border-danger text-center p-2">
+                    <small class="text-danger d-block fw-bold text-truncate" style="font-size:0.68rem;">EGRESOS</small>
+                    <span class="text-danger fw-bold" id="total-resumen-egresos" style="font-size:0.95rem;">S/ 0.00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contenedor donde se inyectan los registros (debajo de las tarjetas de resumen y encima de los títulos de registros) -->
+        <div class="bg-light p-2 rounded-3 border border-light shadow-sm inset" id="lista-historial-agrupado"></div>
+    </div>
 </div>
 
 <div class="container py-4 pantalla" id="vista-gestion">
