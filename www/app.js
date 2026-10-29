@@ -1095,7 +1095,7 @@ function renderizarEstadisticas() {
     if (elTextoMes) {
         elTextoMes.textContent = `${nombreMesTexto} ${anioFiltro}`;
     }
-    const elBadgeNeto = document.getElementById('historial-badge-neto');
+    const elBadgeNeto = document.getElementById('badgeNetoSuperior') || document.getElementById('historial-badge-neto');
     if (elBadgeNeto) {
         elBadgeNeto.textContent = `Neto: S/ ${neto.toFixed(2)}`;
         elBadgeNeto.className = `badge ${neto >= 0 ? 'bg-success' : 'bg-danger'} py-2 px-3 fs-6 rounded-pill`;
@@ -1116,15 +1116,18 @@ function renderizarEstadisticas() {
             colResumenEgresos.classList.add('d-none');
             colResumenIngresos.classList.remove('d-none', 'col-6');
             colResumenIngresos.classList.add('col-12');
+            if (elBadgeNeto) elBadgeNeto.classList.add('d-none');
         } else if (tipoFiltro === 'egresos') {
             colResumenIngresos.classList.add('d-none');
             colResumenEgresos.classList.remove('d-none', 'col-6');
             colResumenEgresos.classList.add('col-12');
+            if (elBadgeNeto) elBadgeNeto.classList.add('d-none');
         } else {
             colResumenIngresos.classList.remove('d-none', 'col-12');
             colResumenIngresos.classList.add('col-6');
             colResumenEgresos.classList.remove('d-none', 'col-12');
             colResumenEgresos.classList.add('col-6');
+            if (elBadgeNeto) elBadgeNeto.classList.remove('d-none');
         }
     }
 
