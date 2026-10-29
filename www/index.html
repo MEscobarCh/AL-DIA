@@ -164,7 +164,7 @@
         <div id="contenedorDinamicoRegistro" class="mb-4"></div>
 
         <!-- Botón Final Negro: Guardar registro -->
-        <button type="button" class="btn btn-dark w-100 py-3 fw-bold rounded-pill shadow-sm" id="btnGuardarRegistroUnificado">
+        <button type="button" class="btn btn-primary w-100 py-3 fw-bold rounded-pill shadow-sm" id="btnGuardarRegistroUnificado">
             Guardar registro
         </button>
     </div>
@@ -188,7 +188,26 @@
 </div>
 
 <div class="container py-4 pantalla" id="vista-estadisticas">
-    <h3 class="fw-bold mb-1">Historial Financiero</h3>
+    <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
+        <h3 class="fw-bold mb-0">Historial Financiero</h3>
+        <div class="dropdown">
+            <button class="btn btn-success btn-sm dropdown-toggle fw-bold rounded-pill px-3 shadow-sm" type="button" id="btnDropdownExportar" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download me-1"></i>Descargar Reporte
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="btnDropdownExportar">
+                <li>
+                    <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('pdf')">
+                        <i class="fas fa-file-pdf text-danger me-2"></i>Exportar como PDF
+                    </button>
+                </li>
+                <li>
+                    <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('excel')">
+                        <i class="fas fa-file-excel text-success me-2"></i>Exportar como Excel
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </div>
     <p class="text-muted small mb-3">Resumen de ingresos y egresos por mes.</p>
     
     <!-- Barra de Filtros Dinámicos (Corrección Crítica UI: Select Nativo) -->
@@ -516,6 +535,9 @@
 
 <script src="bootstrap.bundle.min.js"></script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <script src="app.js"></script>
 <!-- MODAL DE CARGA DE BACKUP -->
 <div class="modal fade" id="modalCargaBackup" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">

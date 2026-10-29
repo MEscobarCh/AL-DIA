@@ -4148,3 +4148,340 @@ function confirmarTraslado() {
 }
 window.confirmarTraslado = confirmarTraslado;
 
+// ==========================================
+// --- MOTOR DE EXPORTACIÓN A PDF Y EXCEL (Fase 5.4 - Estructurada y Dinámica) ---
+// ==========================================
+function exportarReporte(formato) {
+    if (formato === 'excel' && typeof XLSX === 'undefined') {
+        alert("La librería de Excel aún no ha terminado de cargar. Por favor verifica tu conexión a internet.");
+        return;
+    }
+    if (formato === 'pdf' && (!window.jspdf || !window.jspdf.jsPDF)) {
+        alert("La librería de PDF aún no ha terminado de cargar. Por favor verifica tu conexión a internet.");
+        return;
+    }
+
+    const inputMes = document.getElementById('filtroMesHistorial');
+    let anioFiltro, mesFiltro;
+    if (inputMes && inputMes.value) {
+        const partes = inputMes.value.split('-').map(Number);
+        anioFiltro = partes[0];
+        mesFiltro = partes[1];
+    } else {
+        const hoy = new Date();
+        anioFiltro = hoy.getFullYear();
+        mesFiltro = hoy.getMonth() + 1;
+    }
+
+    const tipoFiltro = document.getElementById('filtroTipoHistorial') ? document.getElementById('filtroTipoHistorial').value : 'ambos';
+
+    const nombreMesTexto = (typeof meses !== 'undefined' && meses[mesFiltro - 1]) ? meses[mesFiltro - 1] : String(mesFiltro).padStart(2, '0');
+
+    let sufijo = "";
+    if (tipoFiltro === 'ingresos') sufijo = "_Ingresos";
+    else if (tipoFiltro === 'egresos') sufijo = "_Egresos";
+
+    const nombreArchivoBase = "Reporte_ALDIA_" + nombreMesTexto + "_" + anioFiltro + sufijo;
+
+    const pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    const egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    const datosIngresos = [];
+    const datosEgresos = [];
+
+    // 1. Filtrar y procesar Ingresos
+    if (tipoFiltro === 'ambos' || tipoFiltro === 'ingresos') {
+        pagos.filter(p => {
+            if (!p.pagado) return false;
+            let pAnio = Number(p.año || p.ano);
+            let pMes = Number(p.mes);
+            if ((!pAnio || !pMes) && p.fecha_pago_real) {
+                let f = new Date(Number(p.fecha_pago_real));
+                if (!isNaN(f.getTime())) {
+                    pAnio = f.getFullYear();
+                    pMes = f.getMonth() + 1;
+                }
+            }
+            return pAnio === anioFiltro && pMes === mesFiltro;
+        }).forEach(pago => {
+            const cliente = clientes.find(c => c.id === pago.cliente_id);
+
+            // Regla dinámica de "Concepto":
+            // - Si pago.es_garantia es true -> "Garantía"
+            // - Si pago.metodo es "Liquidación Final" -> "Liquidación Final"
+            // - De lo contrario, según frecuencia: Mensual -> Mensualidad, Quincenal -> Quincena, Semanal -> Semana, Diario -> Día (Fallback: Servicio)
+            let concepto = 'Servicio';
+            if (pago.es_garantia === true || pago.es_garantia === 'true') {
+                concepto = 'Garantía';
+            } else if (pago.metodo && pago.metodo.toString().trim().toLowerCase() === 'liquidación final') {
+                concepto = 'Liquidación Final';
+            } else if (cliente && cliente.frecuencia) {
+                const f = cliente.frecuencia.toString().trim().toLowerCase();
+                if (f === 'mensual') concepto = 'Mensualidad';
+                else if (f === 'quincenal') concepto = 'Quincena';
+                else if (f === 'semanal') concepto = 'Semana';
+                else if (f === 'diario') concepto = 'Día';
+                else concepto = 'Servicio';
+            } else {
+                concepto = 'Servicio';
+            }
+
+            const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
+            const fechaPago = new Date(Number(timestampBase));
+            const d = fechaPago.getDate().toString().padStart(2, '0');
+            const m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
+            const y = fechaPago.getFullYear();
+            const fechaFormateada = `${d}/${m}/${y}`;
+
+            const cuarto = (cliente && cliente.ref) ? cliente.ref : '-';
+            const inquilino = (cliente && cliente.nombre) ? cliente.nombre : 'Cliente General';
+            const monto = parseFloat(pago.monto) || 0;
+            const metodo = pago.metodo || 'Efectivo';
+
+            datosIngresos.push({
+                timestamp: Number(timestampBase) || 0,
+                fecha: fechaFormateada,
+                cuarto: cuarto,
+                inquilino: inquilino,
+                concepto: concepto,
+                metodo: metodo,
+                monto: monto
+            });
+        });
+    }
+
+    // 2. Filtrar y procesar Egresos
+    if (tipoFiltro === 'ambos' || tipoFiltro === 'egresos') {
+        egresos.forEach(egr => {
+            let d, m, y;
+            if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
+                const partes = egr.fecha.split('-');
+                y = Number(partes[0]);
+                m = Number(partes[1]);
+                d = String(partes[2]).padStart(2, '0');
+            } else {
+                d = String(egr.dia || '01').padStart(2, '0');
+                m = Number(egr.mes || mesFiltro);
+                y = Number(egr.año || anioFiltro);
+            }
+
+            if (y === anioFiltro && m === mesFiltro) {
+                const fechaFormateada = `${d}/${String(m).padStart(2, '0')}/${y}`;
+
+                let timestampEgreso = Number(egr.id);
+                if (egr.fecha) {
+                    const partesFecha = egr.fecha.split('-').map(Number);
+                    if (partesFecha.length === 3) {
+                        const fechaBaseId = new Date(Number(egr.id));
+                        const hrsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
+                        const minsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
+                        const secsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
+                        timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrsB, minsB, secsB).getTime();
+                    }
+                }
+
+                datosEgresos.push({
+                    timestamp: timestampEgreso || 0,
+                    fecha: fechaFormateada,
+                    categoria: egr.categoria || 'Gasto / Egreso',
+                    motivo: egr.motivo || 'Egreso',
+                    monto: parseFloat(egr.monto) || 0
+                });
+            }
+        });
+    }
+
+    // Ordenar cronológicamente
+    datosIngresos.sort((a, b) => a.timestamp - b.timestamp);
+    datosEgresos.sort((a, b) => a.timestamp - b.timestamp);
+
+    const totalIngresos = datosIngresos.reduce((sum, item) => sum + item.monto, 0);
+    const totalEgresos = datosEgresos.reduce((sum, item) => sum + item.monto, 0);
+    const neto = totalIngresos - totalEgresos;
+
+    // EXCEL: Estructura Jerárquica (Resumen > Ingresos > Egresos)
+    if (formato === 'excel') {
+        let filaResumenExcel = [];
+        if (tipoFiltro === 'ingresos') {
+            filaResumenExcel = ['TOTAL INGRESOS:', Number(totalIngresos.toFixed(2))];
+        } else if (tipoFiltro === 'egresos') {
+            filaResumenExcel = ['TOTAL EGRESOS:', Number(totalEgresos.toFixed(2))];
+        } else {
+            filaResumenExcel = ['TOTAL INGRESOS:', Number(totalIngresos.toFixed(2)), 'TOTAL EGRESOS:', Number(totalEgresos.toFixed(2)), 'NETO:', Number(neto.toFixed(2))];
+        }
+
+        const aoa = [
+            ['RESUMEN FINANCIERO'],
+            [`Periodo: ${nombreMesTexto} ${anioFiltro}`, `Filtro: ${tipoFiltro.toUpperCase()}`],
+            filaResumenExcel,
+            [] // Fila vacía
+        ];
+
+        // Bloque Ingresos (si aplica)
+        if (tipoFiltro === 'ambos' || tipoFiltro === 'ingresos') {
+            aoa.push(['DETALLE DE INGRESOS']);
+            aoa.push(['Fecha', 'Cuarto', 'Inquilino', 'Concepto', 'Método', 'Monto']);
+            if (datosIngresos.length > 0) {
+                datosIngresos.forEach(item => {
+                    aoa.push([item.fecha, item.cuarto, item.inquilino, item.concepto, item.metodo, Number(item.monto.toFixed(2))]);
+                });
+                aoa.push(['Subtotal Ingresos:', '', '', '', '', Number(totalIngresos.toFixed(2))]);
+            } else {
+                aoa.push(['No se registraron ingresos en este periodo']);
+            }
+            aoa.push([]); // Fila vacía
+        }
+
+        // Bloque Egresos (si aplica)
+        if (tipoFiltro === 'ambos' || tipoFiltro === 'egresos') {
+            aoa.push(['DETALLE DE EGRESOS']);
+            aoa.push(['Fecha', 'Categoría', 'Motivo', 'Monto']);
+            if (datosEgresos.length > 0) {
+                datosEgresos.forEach(item => {
+                    aoa.push([item.fecha, item.categoria, item.motivo, Number(item.monto.toFixed(2))]);
+                });
+                aoa.push(['Subtotal Egresos:', '', '', Number(totalEgresos.toFixed(2))]);
+            } else {
+                aoa.push(['No se registraron egresos en este periodo']);
+            }
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Reporte");
+        XLSX.writeFile(wb, nombreArchivoBase + ".xlsx");
+
+    // PDF: Estructura Jerárquica con jsPDF + autoTable
+    } else if (formato === 'pdf') {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.width;
+
+        // Bloque 1 (Resumen): Título
+        doc.setFontSize(16);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(33, 37, 41);
+        doc.text(`Reporte Financiero - ${nombreMesTexto} ${anioFiltro}`, 14, 18);
+
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(108, 117, 125);
+        doc.text(`Filtro: ${tipoFiltro.toUpperCase()} | Fecha de emisión: ${new Date().toLocaleDateString('es-PE')}`, 14, 25);
+
+        // Tarjetas individuales de Resumen (Burbujas)
+        const margin = 14;
+        const gap = 5;
+        const usableWidth = pageWidth - (margin * 2);
+        const boxHeight = 12;
+        const boxY = 29;
+        const textY = boxY + 7.5;
+
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'bold');
+        doc.setDrawColor(210, 215, 220);
+
+        if (tipoFiltro === 'ambos') {
+            const boxWidth = (usableWidth - (gap * 2)) / 3;
+
+            // Burbuja 1 (Ingresos)
+            const x1 = margin;
+            doc.roundedRect(x1, boxY, boxWidth, boxHeight, 2, 2, 'S');
+            doc.setTextColor(25, 135, 84);
+            doc.text(`TOTAL INGRESOS: S/ ${totalIngresos.toFixed(2)}`, x1 + (boxWidth / 2), textY, { align: "center" });
+
+            // Burbuja 2 (Egresos)
+            const x2 = margin + boxWidth + gap;
+            doc.roundedRect(x2, boxY, boxWidth, boxHeight, 2, 2, 'S');
+            doc.setTextColor(220, 53, 69);
+            doc.text(`TOTAL EGRESOS: S/ ${totalEgresos.toFixed(2)}`, x2 + (boxWidth / 2), textY, { align: "center" });
+
+            // Burbuja 3 (Neto)
+            const x3 = margin + (boxWidth * 2) + (gap * 2);
+            doc.roundedRect(x3, boxY, boxWidth, boxHeight, 2, 2, 'S');
+            doc.setTextColor(neto >= 0 ? 13 : 220, neto >= 0 ? 110 : 53, neto >= 0 ? 253 : 69);
+            doc.text(`NETO: S/ ${neto.toFixed(2)}`, x3 + (boxWidth / 2), textY, { align: "center" });
+
+        } else if (tipoFiltro === 'ingresos' || tipoFiltro === 'egresos') {
+            const boxWidth = usableWidth / 2;
+            const x = (pageWidth / 2) - (boxWidth / 2);
+
+            doc.roundedRect(x, boxY, boxWidth, boxHeight, 2, 2, 'S');
+            if (tipoFiltro === 'ingresos') {
+                doc.setTextColor(25, 135, 84);
+                doc.text(`TOTAL INGRESOS: S/ ${totalIngresos.toFixed(2)}`, pageWidth / 2, textY, { align: "center" });
+            } else {
+                doc.setTextColor(220, 53, 69);
+                doc.text(`TOTAL EGRESOS: S/ ${totalEgresos.toFixed(2)}`, pageWidth / 2, textY, { align: "center" });
+            }
+        }
+
+        let currentY = boxY + boxHeight + 8;
+
+        // Bloque 2 (Ingresos)
+        if (tipoFiltro === 'ambos' || tipoFiltro === 'ingresos') {
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(33, 37, 41);
+            doc.text("Detalle de Ingresos", 14, currentY);
+
+            const filasIngresos = datosIngresos.map(item => [
+                item.fecha,
+                item.cuarto,
+                item.inquilino,
+                item.concepto,
+                item.metodo,
+                `S/ ${item.monto.toFixed(2)}`
+            ]);
+
+            doc.autoTable({
+                startY: currentY + 4,
+                head: [['Fecha', 'Cuarto', 'Inquilino', 'Concepto', 'Método', 'Monto']],
+                body: filasIngresos.length > 0 ? filasIngresos : [['-', '-', 'No se registraron ingresos', '-', '-', 'S/ 0.00']],
+                theme: 'striped',
+                headStyles: { fillColor: [40, 167, 69] },
+                styles: { fontSize: 8, cellPadding: 2 },
+                columnStyles: {
+                    5: { halign: 'right' }
+                }
+            });
+
+            currentY = doc.lastAutoTable.finalY + 12;
+        }
+
+        // Bloque 3 (Egresos)
+        if (tipoFiltro === 'ambos' || tipoFiltro === 'egresos') {
+            if (currentY > 230) {
+                doc.addPage();
+                currentY = 20;
+            }
+
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(33, 37, 41);
+            doc.text("Detalle de Egresos", 14, currentY);
+
+            const filasEgresos = datosEgresos.map(item => [
+                item.fecha,
+                item.categoria,
+                item.motivo,
+                `S/ ${item.monto.toFixed(2)}`
+            ]);
+
+            doc.autoTable({
+                startY: currentY + 4,
+                head: [['Fecha', 'Categoría', 'Motivo', 'Monto']],
+                body: filasEgresos.length > 0 ? filasEgresos : [['-', '-', 'No se registraron egresos', 'S/ 0.00']],
+                theme: 'striped',
+                headStyles: { fillColor: [220, 53, 69] },
+                styles: { fontSize: 8, cellPadding: 2 },
+                columnStyles: {
+                    3: { halign: 'right' }
+                }
+            });
+        }
+
+        doc.save(nombreArchivoBase + ".pdf");
+    }
+}
+window.exportarReporte = exportarReporte;
