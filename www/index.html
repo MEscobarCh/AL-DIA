@@ -723,5 +723,34 @@
     </div>
 </div>
 
+
+<!-- Modal Traslado de Inquilino (Fase 5.3) -->
+<div class="modal fade" id="modalTrasladoInquilino" tabindex="-1" aria-labelledby="modalTrasladoInquilinoLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title fs-6 fw-bold" id="modalTrasladoInquilinoLabel">
+                    <i class="fas fa-exchange-alt me-2"></i>Traslado de Inquilino
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <input type="hidden" id="trasladoClienteId">
+                <p id="textoTrasladoInfo" class="text-secondary mb-3 small"></p>
+                <div class="mb-2">
+                    <label for="selectNuevaHabitacion" class="form-label small fw-bold text-dark">Nueva Habitación:</label>
+                    <select id="selectNuevaHabitacion" class="form-select"></select>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 fw-bold" id="btnConfirmarTraslado" onclick="confirmarTraslado()">
+                    <i class="fas fa-check me-1"></i>Confirmar Traslado
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

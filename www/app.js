@@ -3694,8 +3694,12 @@ function renderizarTabHabitaciones(habitaciones, clientes) {
         const inquilino = clientes.find(c => c.activo === true && (c.ref === h.nombre || String(c.ref) === String(h.id)));
         
         let badge = '';
+        let botonTrasladar = '';
         if (inquilino) {
             badge = `<span class="badge bg-danger text-white"><i class="fas fa-user-lock me-1"></i>Ocupada por: ${inquilino.nombre}</span>`;
+            const nomInq = (inquilino.nombre || '').replace(/'/g, "\\'");
+            const nomHab = (h.nombre || '').replace(/'/g, "\\'");
+            botonTrasladar = `<button type="button" class="btn btn-info btn-sm text-white" onclick="abrirModalTraslado(${inquilino.id}, '${nomInq}', '${nomHab}')"><i class="fas fa-exchange-alt me-1"></i>Trasladar</button>`;
         } else {
             badge = `<span class="badge bg-success text-white"><i class="fas fa-check-circle me-1"></i>Disponible</span>`;
         }
@@ -3714,6 +3718,7 @@ function renderizarTabHabitaciones(habitaciones, clientes) {
                     </div>
                 </div>
                 <div class="d-flex gap-1">
+                    ${botonTrasladar}
                     <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarHabitacionGestor(${h.id})">
                         <i class="fas fa-edit me-1"></i>Editar
                     </button>
@@ -3741,8 +3746,8 @@ function renderizarTabServicios(servicios, clientes) {
         return;
     }
 
-    let html = '';
-    servicios.forEach(s => {
+    let itemsHtml = '';
+    servicios.forEach((s, idx) => {
         const inscritos = clientes.filter(c => c.activo === true && (c.ref === s.nombre || (c.ref && s.nombre && c.ref.trim() === s.nombre.trim()) || String(c.ref) === String(s.id)));
         const cantidadInscritos = inscritos.length;
 
@@ -3751,39 +3756,62 @@ function renderizarTabServicios(servicios, clientes) {
         else if (categoriaNombre.toLowerCase() === 'streaming') categoriaNombre = 'Streaming';
         else if (categoriaNombre.toLowerCase() === 'otro') categoriaNombre = 'Otro servicio';
 
-        const badgeInscritos = cantidadInscritos > 0
-            ? `<span class="badge bg-primary text-white"><i class="fas fa-users me-1"></i>Inscritos: ${cantidadInscritos} personas</span>`
-            : `<span class="badge bg-secondary text-white"><i class="fas fa-user-slash me-1"></i>Inscritos: 0 personas</span>`;
+        const collapseId = `collapse-servicio-${s.id || idx}`;
+        const headingId = `heading-servicio-${s.id || idx}`;
 
-        html += `
-        <div class="card border rounded-3 p-3 mb-2 shadow-sm bg-white">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="badge bg-light text-primary border small fw-bold">${categoriaNombre}</span>
-                        <h6 class="fw-bold mb-0 text-dark">${s.nombre}</h6>
+        const inscritosHtml = cantidadInscritos > 0
+            ? `<ul class="list-group list-group-flush mb-0">
+                ${inscritos.map(c => `
+                    <li class="list-group-item px-0 py-1 small d-flex align-items-center bg-transparent text-dark">
+                        <i class="fas fa-user text-muted me-2"></i>${c.nombre}
+                    </li>
+                `).join('')}
+               </ul>`
+            : `<div class="text-muted small fst-italic">No hay alumnos inscritos.</div>`;
+
+        itemsHtml += `
+        <div class="accordion-item border rounded-3 mb-2 shadow-sm overflow-hidden bg-white">
+            <h2 class="accordion-header" id="${headingId}">
+                <button class="accordion-button collapsed py-2 px-3" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                    <div class="d-flex align-items-center justify-content-between flex-grow-1 me-3 flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-light text-primary border small fw-bold">${categoriaNombre}</span>
+                            <span class="fw-bold text-dark">${s.nombre}</span>
+                        </div>
+                        <div>
+                            <span class="badge ${cantidadInscritos > 0 ? 'bg-primary' : 'bg-secondary'} text-white">
+                                <i class="fas ${cantidadInscritos > 0 ? 'fa-users' : 'fa-user-slash'} me-1"></i>Inscritos: ${cantidadInscritos}
+                            </span>
+                        </div>
                     </div>
-                    <div class="text-muted small">
-                        Precio: <span class="fw-semibold text-dark">S/ ${parseFloat(s.precio_base || 0).toFixed(2)}</span>
-                        ${s.frecuencia_base ? `<span class="badge bg-light text-dark border ms-1">${s.frecuencia_base}</span>` : ''}
+                </button>
+            </h2>
+            <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headingId}" data-bs-parent="#accordionServicios">
+                <div class="accordion-body p-3 bg-light">
+                    <div class="d-flex justify-content-between align-items-center pb-2 mb-2 border-bottom flex-wrap gap-2">
+                        <div class="text-muted small">
+                            Precio: <span class="fw-semibold text-dark">S/ ${parseFloat(s.precio_base || 0).toFixed(2)}</span>
+                            ${s.frecuencia_base ? `<span class="badge bg-white text-dark border ms-1">${s.frecuencia_base}</span>` : ''}
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarServicioGestor(${s.id})">
+                                <i class="fas fa-edit me-1"></i>Editar
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarServicioGestor(${s.id})">
+                                <i class="fas fa-trash-alt me-1"></i>Eliminar
+                            </button>
+                        </div>
                     </div>
-                    <div class="mt-2">
-                        ${badgeInscritos}
+                    <div>
+                        <div class="fw-bold small text-muted mb-1">Inscritos:</div>
+                        ${inscritosHtml}
                     </div>
-                </div>
-                <div class="d-flex gap-1">
-                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarServicioGestor(${s.id})">
-                        <i class="fas fa-edit me-1"></i>Editar
-                    </button>
-                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarServicioGestor(${s.id})">
-                        <i class="fas fa-trash-alt me-1"></i>Eliminar
-                    </button>
                 </div>
             </div>
         </div>`;
     });
 
-    cont.innerHTML = html;
+    cont.innerHTML = `<div class="accordion" id="accordionServicios">${itemsHtml}</div>`;
 }
 
 function renderizarTabCategorias(servicios, clientes) {
@@ -4034,3 +4062,89 @@ function editarCategoriaGestor(catNombre) {
     if (typeof renderizarDashboard === 'function') renderizarDashboard();
 }
 window.editarCategoriaGestor = editarCategoriaGestor;
+
+// ==========================================
+// --- MOTOR DE TRASLADO DE INQUILINOS (Fase 5.3) ---
+// ==========================================
+let modalTrasladoInstancia = null;
+
+function abrirModalTraslado(clienteId, clienteNombre, habitacionActual) {
+    const infoEl = document.getElementById('textoTrasladoInfo');
+    const idInput = document.getElementById('trasladoClienteId');
+    const selectHab = document.getElementById('selectNuevaHabitacion');
+    const btnConfirmar = document.getElementById('btnConfirmarTraslado');
+
+    if (infoEl) {
+        infoEl.innerHTML = `Mover a <strong>${clienteNombre}</strong> del cuarto <strong>${habitacionActual}</strong> a:`;
+    }
+    if (idInput) {
+        idInput.value = clienteId;
+    }
+
+    const habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    // Filtro inteligente: habitaciones que no tienen ningún inquilino activo
+    const habitacionesLibres = habitaciones.filter(h => {
+        const ocupada = clientes.some(c => c.activo === true && (c.ref === h.nombre || (c.ref && h.nombre && c.ref.trim() === h.nombre.trim()) || String(c.ref) === String(h.id)));
+        return !ocupada;
+    });
+
+    if (selectHab) {
+        if (habitacionesLibres.length === 0) {
+            selectHab.innerHTML = '<option value="" disabled selected>No hay habitaciones libres</option>';
+            if (btnConfirmar) btnConfirmar.disabled = true;
+        } else {
+            selectHab.innerHTML = habitacionesLibres.map(h => `<option value="${h.nombre}">${h.nombre} (S/ ${parseFloat(h.precio_base || 0).toFixed(2)})` + (h.frecuencia_base ? ` - ${h.frecuencia_base}` : '') + `</option>`).join('');
+            if (btnConfirmar) btnConfirmar.disabled = false;
+        }
+    }
+
+    const modalEl = document.getElementById('modalTrasladoInquilino');
+    if (modalEl) {
+        if (!modalTrasladoInstancia) {
+            modalTrasladoInstancia = new bootstrap.Modal(modalEl);
+        }
+        modalTrasladoInstancia.show();
+    }
+}
+window.abrirModalTraslado = abrirModalTraslado;
+
+function confirmarTraslado() {
+    const idInput = document.getElementById('trasladoClienteId');
+    const selectHab = document.getElementById('selectNuevaHabitacion');
+
+    if (!idInput || !selectHab) return;
+    const clienteId = idInput.value;
+    const nuevaHabitacion = selectHab.value;
+
+    if (!clienteId || !nuevaHabitacion) {
+        alert("Selecciona una habitación válida para el traslado.");
+        return;
+    }
+
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    const cliente = clientes.find(c => String(c.id) === String(clienteId));
+
+    if (!cliente) {
+        alert("Cliente no encontrado.");
+        return;
+    }
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+
+    cliente.ref = nuevaHabitacion;
+    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+
+    const modalEl = document.getElementById('modalTrasladoInquilino');
+    if (modalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl) || modalTrasladoInstancia;
+        if (modalInstance) modalInstance.hide();
+    }
+
+    renderizarGestorInventario();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+    if (typeof renderizarDashboard === 'function') renderizarDashboard();
+}
+window.confirmarTraslado = confirmarTraslado;
+
