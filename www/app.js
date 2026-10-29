@@ -11,10 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
     generarDeudasDelMes();
     renderizarDashboard();
     
-    // Configurar formularios
-    document.getElementById('form-nuevo-cliente').addEventListener('submit', guardarNuevoCliente);
-    let formEgreso = document.getElementById('form-nuevo-egreso');
-    if(formEgreso) formEgreso.addEventListener('submit', guardarNuevoEgreso);
+    // Inicializar módulo unificado de registro dinámico (Fase 2)
+    iniciarModuloRegistro();
 });
 
 // --- BASE DE DATOS LOCAL ---
@@ -33,6 +31,12 @@ function iniciarBaseDeDatos() {
     // Nueva base de datos para egresos
     if (!localStorage.getItem('aldia_egresos')) {
         localStorage.setItem('aldia_egresos', JSON.stringify([]));
+    }
+    if (!localStorage.getItem('aldia_habitaciones')) {
+        localStorage.setItem('aldia_habitaciones', JSON.stringify([]));
+    }
+    if (!localStorage.getItem('aldia_servicios')) {
+        localStorage.setItem('aldia_servicios', JSON.stringify([]));
     }
 }
 
@@ -111,13 +115,11 @@ function renderizarDashboard() {
         }
 
         if (tocaCobrar) {
-            // Buscamos si pagó la cuota mensual (ignorando la garantía aquí)
-            let pago = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia);
-
-            if (pago && pago.pagado) {
+            // Detección bifurcada de pagos realizados y deudas pendientes (Fase 3.2 - Sin Deudas Huérfanas)
+            let pagosCobrados = pagos.filter(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia && p.pagado);
+            pagosCobrados.forEach(pago => {
                 totalIngresos += parseFloat(pago.monto);
 
-                // --- SECCIÓN: YA PAGADOS (Sin lápiz de edición) ---
                 let badgeHtml = "";
                 let botonExtraHtml = "";
 
@@ -136,7 +138,7 @@ function renderizarDashboard() {
                                 ${cliente.nombre}
                                 ${badgeHtml}
                             </h6>
-                            <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pago.metodo}</small>
+                            <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pago.metodo || 'Efectivo'}</small>
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="fw-bold text-success fs-5 me-2">S/ ${parseFloat(pago.monto).toFixed(2)}</span>
@@ -145,8 +147,13 @@ function renderizarDashboard() {
                         </div>
                     </div>
                 </div>`;
-            } else {
-                listaPendientes.push({ tipo: 'cuota', cliente: cliente });
+            });
+
+            let pagoPendiente = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia && !p.pagado);
+            if (pagoPendiente) {
+                listaPendientes.push({ tipo: 'cuota', cliente: cliente, pagoPendiente: pagoPendiente });
+            } else if (pagosCobrados.length === 0) {
+                listaPendientes.push({ tipo: 'cuota', cliente: cliente, pagoPendiente: null });
             }
         }
 
@@ -230,7 +237,7 @@ function renderizarDashboard() {
                 badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
             }
 
-            let pago = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia);
+            let pago = item.pagoPendiente || pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia && !p.pagado);
             let montoDeuda = pago ? pago.monto : cliente.monto;
             saldoPendiente += parseFloat(montoDeuda);
 
@@ -455,29 +462,52 @@ function procesarPago() {
 
 // --- NUEVA FUNCIÓN: REVERTIR COBRO ---
 function revertirPago(pagoId, nombre) {
-    if(confirm(`⚠️ ¿Seguro que deseas REVERTIR el cobro de ${nombre}?`)) {
+    if (confirm(`⚠️ ¿Seguro que deseas REVERTIR el cobro de ${nombre}?`)) {
         guardarSnapshot();
         let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
         let index = pagos.findIndex(p => p.id === pagoId);
-        
-        if(index !== -1) {
-            if (pagos[index].es_garantia) {
-                // Revertimos la garantía en el perfil del cliente
-                let clientes = JSON.parse(localStorage.getItem('aldia_clientes'));
-                let cIndex = clientes.findIndex(c => c.id === pagos[index].cliente_id);
+
+        if (index !== -1) {
+            const pagoRevertido = pagos[index];
+
+            // Si es garantía, revertimos el estado en el perfil del cliente
+            if (pagoRevertido.es_garantia) {
+                let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+                let cIndex = clientes.findIndex(c => c.id === pagoRevertido.cliente_id);
                 if (cIndex !== -1) {
                     clientes[cIndex].garantia_pagada = false;
                     localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
                 }
-                // Borramos el recibo falso del historial
+            }
+
+            // 1. Regla de Búsqueda Universal al Revertir (Fase 3.4):
+            // - cliente_id igual al del pago revertido
+            // - es_garantia exactamente igual
+            // - pagado === false
+            // - Más reciente sin límite estricto de mes y año
+            let deudasVinculadas = pagos.filter(p =>
+                p.cliente_id === pagoRevertido.cliente_id &&
+                Boolean(p.es_garantia) === Boolean(pagoRevertido.es_garantia) &&
+                p.pagado === false
+            );
+
+            let deudaVinculada = deudasVinculadas.length > 0
+                ? deudasVinculadas.reduce((prev, curr) => (curr.id > prev.id ? curr : prev), deudasVinculadas[0])
+                : null;
+
+            // 2. Fusión Matemática (Universal):
+            if (deudaVinculada) {
+                // Si se encuentra esa deuda: deuda.monto += pago_revertido.monto y elimina pago_revertido
+                deudaVinculada.monto = parseFloat((parseFloat(deudaVinculada.monto || 0) + parseFloat(pagoRevertido.monto || 0)).toFixed(2));
                 pagos.splice(index, 1);
             } else {
-                // Revertimos el pago mensual normal
-                pagos[index].pagado = false;
-                pagos[index].metodo = "";
+                // Si NO se encuentra deuda vinculada: cambia pagado = false
+                pagoRevertido.pagado = false;
+                pagoRevertido.metodo = "";
             }
+
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
-            
+
             mostrarToastDeshacer(`Cobro de ${nombre} revertido.`);
             renderizarDashboard();
             renderizarEstadisticas();
@@ -492,16 +522,29 @@ function guardarNuevoCliente(e) {
     let fechaInput = document.getElementById('cli-fecha-inicio').value;
     let partes = fechaInput.split('-');
     
-    // 2. Capturar si es Cuarto o Streaming
-    let chkStreaming = document.getElementById('tipo-streaming');
-    let esStreaming = chkStreaming ? chkStreaming.checked : false;
-    let tipoServicio = esStreaming ? 'streaming' : 'cuarto';
+    // 2. Capturar actividad o servicio (Fase 2.1 y Fase 3.6)
+    let selectCatLegacy = document.getElementById('selectCategoriaPrincipal');
+    let radioActividad = document.querySelector('input[name="tipo_actividad_servicio"]:checked');
+    let tipoServicio = selectCatLegacy ? selectCatLegacy.value : (radioActividad ? radioActividad.value : 'alquiler');
+    if (tipoServicio === 'nuevo_global' || tipoServicio === 'crear_nuevo') {
+        let inputNuevaCatLegacy = document.getElementById('inputNuevaCategoriaGlobal');
+        if (inputNuevaCatLegacy && inputNuevaCatLegacy.value.trim()) tipoServicio = inputNuevaCatLegacy.value.trim();
+    }
+    let esStreaming = tipoServicio === 'streaming';
     
-    // 3. Capturar datos de la garantía (Forzamos a 0 si es Streaming)
-    let tieneGarantia = esStreaming ? false : document.getElementById('chk-tiene-garantia').checked;
+    // 3. Capturar datos de la garantía (Solo para Alquiler)
+    let tieneGarantia = (tipoServicio === 'alquiler' || tipoServicio === 'cuarto') && document.getElementById('chk-tiene-garantia') ? document.getElementById('chk-tiene-garantia').checked : false;
     let montoGarantia = tieneGarantia ? (parseFloat(document.getElementById('cli-garantia-monto').value) || 0) : 0;
-    let pagadaGarantia = tieneGarantia ? document.getElementById('chk-garantia-pagada').checked : false;
-    let fechaGarantia = tieneGarantia ? document.getElementById('cli-garantia-fecha').value : "";
+    
+    let radioGarPagada = document.getElementById('garantia-pagada-ahora');
+    let chkGarPagada = document.getElementById('chk-garantia-pagada');
+    let pagadaGarantia = false;
+    if (radioGarPagada) {
+        pagadaGarantia = radioGarPagada.checked;
+    } else if (chkGarPagada) {
+        pagadaGarantia = chkGarPagada.checked;
+    }
+    let fechaGarantia = tieneGarantia && document.getElementById('cli-garantia-fecha') ? document.getElementById('cli-garantia-fecha').value : "";
 
     // --- 🛡️ VALIDACIÓN DE SEGURIDAD ---
     if (tieneGarantia) {
@@ -729,13 +772,17 @@ function ejecutarBorradoSelectivo() {
     let chkEgresos = document.getElementById('del-chk-egresos');
     let chkApuntes = document.getElementById('del-chk-apuntes');
     let chkClientes = document.getElementById('del-chk-clientes');
+    let chkHabitaciones = document.getElementById('chkBorrarHabitaciones');
+    let chkServicios = document.getElementById('chkBorrarServicios');
 
     let borrarRecibos = chkRecibos ? chkRecibos.checked : false;
     let borrarEgresos = chkEgresos ? chkEgresos.checked : false;
     let borrarApuntes = chkApuntes ? chkApuntes.checked : false;
     let borrarClientes = chkClientes ? chkClientes.checked : false;
+    let borrarHabitaciones = chkHabitaciones ? chkHabitaciones.checked : false;
+    let borrarServicios = chkServicios ? chkServicios.checked : false;
 
-    if (!borrarRecibos && !borrarEgresos && !borrarApuntes && !borrarClientes) {
+    if (!borrarRecibos && !borrarEgresos && !borrarApuntes && !borrarClientes && !borrarHabitaciones && !borrarServicios) {
         alert("⚠️ Selecciona al menos una categoría para eliminar.");
         return;
     }
@@ -745,6 +792,8 @@ function ejecutarBorradoSelectivo() {
     if (borrarEgresos) modulos.push("• Historial de Egresos");
     if (borrarApuntes) modulos.push("• Mis Apuntes");
     if (borrarClientes) modulos.push("• Todos los Clientes y Deudas Pendientes");
+    if (borrarHabitaciones) modulos.push("• Catálogo de Habitaciones");
+    if (borrarServicios) modulos.push("• Catálogo de Servicios Frecuentes");
 
     let mensajeConfirm = "⚠️ ¿Confirmas la eliminación de los siguientes elementos?\n\n" + 
         modulos.join('\n') + 
@@ -754,7 +803,7 @@ function ejecutarBorradoSelectivo() {
         return;
     }
 
-    // 1. Guardar snapshot de seguridad antes de modificar nada
+    // 1. Guardar snapshot de seguridad antes de modificar nada (Gestión del Salvavidas Undo)
     guardarSnapshot();
 
     // 2. Ejecutar borrado según selección
@@ -778,10 +827,25 @@ function ejecutarBorradoSelectivo() {
         localStorage.setItem('aldia_apuntes', JSON.stringify([]));
     }
 
-    // 3. Cerrar modal si está abierto
+    // Lógica de eliminación de catálogos de inventario (Fase 3.1)
+    if (borrarHabitaciones) {
+        localStorage.setItem('aldia_habitaciones', JSON.stringify([]));
+    }
+
+    if (borrarServicios) {
+        localStorage.setItem('aldia_servicios', JSON.stringify([]));
+    }
+
+    // 3. Cerrar modal si está abierto y limpiar checks
     if (modalBorradoSelectivoInstancia) {
         modalBorradoSelectivoInstancia.hide();
     }
+    if (chkRecibos) chkRecibos.checked = false;
+    if (chkEgresos) chkEgresos.checked = false;
+    if (chkApuntes) chkApuntes.checked = false;
+    if (chkClientes) chkClientes.checked = false;
+    if (chkHabitaciones) chkHabitaciones.checked = false;
+    if (chkServicios) chkServicios.checked = false;
 
     // 4. Mostrar aviso con opción de deshacer y actualizar interfaces
     mostrarToastDeshacer("Elementos eliminados correctamente.");
@@ -790,6 +854,7 @@ function ejecutarBorradoSelectivo() {
     renderizarEstadisticas();
     if (typeof renderizarCalendario === 'function') renderizarCalendario();
     if (typeof renderizarApuntes === 'function') renderizarApuntes();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
 }
 
 // Funciones conservadas para retrocompatibilidad segura
@@ -1373,7 +1438,8 @@ function navegar(pantallaId) {
     if(pantallaId === 'dashboard') renderizarDashboard();
     if(pantallaId === 'estadisticas') renderizarEstadisticas();
     if(pantallaId === 'calendario') renderizarCalendario();
-    if(pantallaId === 'apuntes') renderizarApuntes(); // <--- NUEVA LÍNEA
+        if(pantallaId === 'apuntes') renderizarApuntes();
+    if(pantallaId === 'nuevo') renderizarFormularioRegistro();
     
     window.scrollTo(0, 0);
 }
@@ -1391,13 +1457,17 @@ function exportarDatos() {
     let chkPagos = document.getElementById('chk-export-pagos');
     let chkEgresos = document.getElementById('chk-export-egresos');
     let chkApuntes = document.getElementById('chk-export-apuntes');
+    let chkHabitaciones = document.getElementById('chkBackupHabitaciones');
+    let chkServicios = document.getElementById('chkBackupServicios');
 
     let incluirClientes = chkClientes ? chkClientes.checked : true;
     let incluirPagos = chkPagos ? chkPagos.checked : true;
     let incluirEgresos = chkEgresos ? chkEgresos.checked : true;
     let incluirApuntes = chkApuntes ? chkApuntes.checked : true;
+    let incluirHabitaciones = chkHabitaciones ? chkHabitaciones.checked : true;
+    let incluirServicios = chkServicios ? chkServicios.checked : true;
 
-    if (!incluirClientes && !incluirPagos && !incluirEgresos && !incluirApuntes) {
+    if (!incluirClientes && !incluirPagos && !incluirEgresos && !incluirApuntes && !incluirHabitaciones && !incluirServicios) {
         alert("⚠️ Selecciona al menos una casilla para respaldar.");
         return;
     }
@@ -1440,7 +1510,7 @@ function exportarDatos() {
 
             // Esperar medio segundo, descargar y transformar la interfaz
             setTimeout(async () => {
-                await ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes);
+                await ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes, incluirHabitaciones, incluirServicios);
                 
                 // Mostrar éxito y el botón de aceptar
                 icono.className = 'fas fa-check-circle text-success mb-3';
@@ -1468,7 +1538,7 @@ function cerrarModalBackup() {
     }
 }
 
-async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes) {
+async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes, incluirHabitaciones, incluirServicios) {
     try {
         let exportData = {};
         
@@ -1486,6 +1556,15 @@ async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgreso
         
         if (incluirApuntes) {
             exportData.apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+        }
+
+        // Fase 4.3: Exportación de Habitaciones y Servicios
+        if (incluirHabitaciones) {
+            exportData.aldia_habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+        }
+
+        if (incluirServicios) {
+            exportData.aldia_servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
         }
 
         let dataStr = JSON.stringify(exportData, null, 2);
@@ -1664,6 +1743,27 @@ function ejecutarRestauracion(data) {
     localStorage.setItem('aldia_pagos', JSON.stringify(currentPagos));
     localStorage.setItem('aldia_egresos', JSON.stringify(currentEgresos));
     localStorage.setItem('aldia_apuntes', JSON.stringify(currentApuntes));
+
+    // 5. RESTAURAR HABITACIONES (Fase 4.3)
+    if (data.aldia_habitaciones) {
+        localStorage.setItem('aldia_habitaciones', JSON.stringify(data.aldia_habitaciones));
+    } else if (data.habitaciones) {
+        localStorage.setItem('aldia_habitaciones', JSON.stringify(data.habitaciones));
+    }
+
+    // 6. RESTAURAR SERVICIOS Y CATEGORÍAS (Fase 4.3)
+    if (data.aldia_servicios) {
+        localStorage.setItem('aldia_servicios', JSON.stringify(data.aldia_servicios));
+    } else if (data.servicios) {
+        localStorage.setItem('aldia_servicios', JSON.stringify(data.servicios));
+    }
+
+    // Refrescar vistas del inventario y estado restaurado
+    if (typeof renderizarGestorInventario === 'function') renderizarGestorInventario();
+    if (typeof cargarCategoriasPrincipales === 'function') cargarCategoriasPrincipales();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+    if (typeof renderizarDashboard === 'function') renderizarDashboard();
+    if (typeof renderizarEstadisticas === 'function') renderizarEstadisticas();
 
     return true;
 }
@@ -1873,7 +1973,9 @@ function guardarSnapshot() {
         clientes: localStorage.getItem('aldia_clientes'),
         pagos: localStorage.getItem('aldia_pagos'),
         egresos: localStorage.getItem('aldia_egresos'),
-        apuntes: localStorage.getItem('aldia_apuntes')
+        apuntes: localStorage.getItem('aldia_apuntes'),
+        habitaciones: localStorage.getItem('aldia_habitaciones'),
+        servicios: localStorage.getItem('aldia_servicios')
     };
     localStorage.setItem('aldia_undo', JSON.stringify(snapshot));
 }
@@ -1920,10 +2022,12 @@ function restaurarDesdeSnapshot(mensajeExito) {
     if (snapshotData) {
         let snapshot = JSON.parse(snapshotData);
         
-        if(snapshot.clientes) localStorage.setItem('aldia_clientes', snapshot.clientes);
-        if(snapshot.pagos) localStorage.setItem('aldia_pagos', snapshot.pagos);
-        if(snapshot.egresos) localStorage.setItem('aldia_egresos', snapshot.egresos);
-        if(snapshot.apuntes) localStorage.setItem('aldia_apuntes', snapshot.apuntes);
+        if(snapshot.clientes !== undefined && snapshot.clientes !== null) localStorage.setItem('aldia_clientes', snapshot.clientes);
+        if(snapshot.pagos !== undefined && snapshot.pagos !== null) localStorage.setItem('aldia_pagos', snapshot.pagos);
+        if(snapshot.egresos !== undefined && snapshot.egresos !== null) localStorage.setItem('aldia_egresos', snapshot.egresos);
+        if(snapshot.apuntes !== undefined && snapshot.apuntes !== null) localStorage.setItem('aldia_apuntes', snapshot.apuntes);
+        if(snapshot.habitaciones !== undefined && snapshot.habitaciones !== null) localStorage.setItem('aldia_habitaciones', snapshot.habitaciones);
+        if(snapshot.servicios !== undefined && snapshot.servicios !== null) localStorage.setItem('aldia_servicios', snapshot.servicios);
         
         // Una vez que lo usamos exitosamente, ahora sí limpiamos la memoria
         localStorage.removeItem('aldia_undo');
@@ -1935,8 +2039,9 @@ function restaurarDesdeSnapshot(mensajeExito) {
         renderizarEstadisticas();
         if (typeof renderizarCalendario === 'function') renderizarCalendario();
         if (typeof renderizarApuntes === 'function') renderizarApuntes();
+        if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
         // Si estábamos en Gestión, volvemos a Inicio para que el usuario vea que volvió
-        navegar('dashboard'); 
+        navegar('dashboard');
     }
 }
 
@@ -2012,7 +2117,15 @@ function abrirModalEditarCliente(clienteId) {
         document.getElementById('edit-cli-apellido').value = cliente.apellido || '';
         document.getElementById('edit-cli-monto').value = cliente.monto;
         document.getElementById('edit-cli-dia').value = cliente.dia;
-        document.getElementById('edit-cli-ref').value = cliente.ref || '';
+        const inputEditRef = document.getElementById('edit-cli-ref');
+        if (inputEditRef) {
+            inputEditRef.value = cliente.ref || '';
+            inputEditRef.readOnly = true;
+            inputEditRef.disabled = true;
+            inputEditRef.style.backgroundColor = '#e9ecef';
+            inputEditRef.style.cursor = 'not-allowed';
+            inputEditRef.style.border = '1px solid #ced4da';
+        }
         
         if (!modalEditarInstancia) {
             modalEditarInstancia = new bootstrap.Modal(document.getElementById('modalEditarCliente'));
@@ -2029,7 +2142,8 @@ function guardarEdicionCliente(e) {
     let nuevoApellido = document.getElementById('edit-cli-apellido').value.trim();
     let nuevoMonto = parseFloat(document.getElementById('edit-cli-monto').value);
     let nuevoDia = parseInt(document.getElementById('edit-cli-dia').value);
-    let nuevaRef = document.getElementById('edit-cli-ref').value.trim();
+    const inputEditRef = document.getElementById('edit-cli-ref');
+    let nuevaRef = inputEditRef ? inputEditRef.value.trim() : '';
     
     let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
     let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
@@ -2037,12 +2151,12 @@ function guardarEdicionCliente(e) {
     let cIndex = clientes.findIndex(c => c.id === id);
     
     if (cIndex !== -1) {
-        // 1. Actualizamos el perfil base del cliente
+        // 1. Actualizamos el perfil base del cliente (manteniendo la referencia protegida)
         clientes[cIndex].nombre = nuevoNombre;
         clientes[cIndex].apellido = nuevoApellido;
         clientes[cIndex].monto = nuevoMonto;
         clientes[cIndex].dia = nuevoDia;
-        clientes[cIndex].ref = nuevaRef;
+        clientes[cIndex].ref = clientes[cIndex].ref || nuevaRef;
         
         let nombreCompleto = `${nuevoNombre} ${nuevoApellido}`.trim();
         
@@ -2091,3 +2205,1746 @@ window.eliminarEgresoHistorial = function(id) {
         location.reload();
     }
 };
+
+// ==========================================
+// --- MÓDULO DE REGISTRO DINÁMICO (FASE 2) ---
+// ==========================================
+
+// Plantilla para registro de Cliente y cobros
+const templateCliente = `
+<form id="form-nuevo-cliente">
+    <!-- Bloque 1 (Actividad) -->
+    <div class="mb-4">
+        <label class="form-label text-muted small fw-bold mb-2" for="selectCategoriaPrincipal">Actividad o servicio</label>
+        <select id="selectCategoriaPrincipal" class="form-select">
+            <option value="alquiler" selected>Alquiler de habitación</option>
+            <option value="streaming">Streaming o suscripción</option>
+            <option value="academia">Inscripción de Alumnos</option>
+            <option value="otro">Otro servicio</option>
+            <option value="nuevo_global">+ Crear nueva categoría...</option>
+        </select>
+        <input type="text" class="form-control d-none mt-2" id="inputNuevaCategoriaGlobal" placeholder="Ej. Cochera, Lavandería">
+    </div>
+
+    <!-- Bloque 2 (Persona) -->
+    <div class="mb-4">
+        <label class="form-label text-muted small fw-bold mb-2">Datos de la persona</label>
+        <div class="row g-2">
+            <div class="col-6">
+                <label class="form-label text-muted small fw-bold" for="cli-nombre">Nombre</label>
+                <input type="text" class="form-control" id="cli-nombre" placeholder="Nombre" required>
+            </div>
+            <div class="col-6">
+                <label class="form-label text-muted small fw-bold" for="cli-apellido">Apellido</label>
+                <input type="text" class="form-control" id="cli-apellido" placeholder="Apellido">
+            </div>
+        </div>
+    </div>
+
+    <!-- Bloque 3 (Inventario Dinámico) -->
+    <div class="mb-4">
+        <label class="form-label text-muted small fw-bold mb-2" id="lbl-select-inventario" for="selectInventario">Habitación</label>
+        <select class="form-select" id="selectInventario">
+            <option value="" selected>Seleccionar...</option>
+            <option value="crear_nuevo">+ Crear nuevo...</option>
+            <option value="manual">Ingresar manualmente</option>
+        </select>
+        
+        <!-- Contenedor para Nuevo Ítem (oculto por defecto) -->
+        <div id="contenedorNuevoItem" class="d-none mt-2">
+            <input type="text" class="form-control" id="inputNombreNuevoItem" placeholder="Ej. 305 o Nombre del servicio">
+        </div>
+    </div>
+
+    <!-- Bloque 4 (Configuración) -->
+    <div class="mb-4">
+        <label class="form-label text-muted small fw-bold mb-2">Configuración de cobro</label>
+        
+        <!-- Fila 1: Importe (S/) y Frecuencia -->
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <label class="form-label text-muted small fw-bold" for="cli-monto">Importe (S/)</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light fw-bold text-muted border-end-0">S/</span>
+                    <input type="number" step="0.01" min="0" class="form-control border-start-0" id="cli-monto" placeholder="0.00" required>
+                </div>
+            </div>
+            <div class="col-6">
+                <label class="form-label text-muted small fw-bold" for="cli-frecuencia">Frecuencia</label>
+                <select class="form-select" id="cli-frecuencia">
+                    <option value="mensual" selected>Mensual</option>
+                    <option value="quincenal">Quincenal</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="diario">Diario</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Fila 2 (NUEVA): Duración de la estadía (oculto por defecto) -->
+        <div id="contenedor-duracion-estadia" class="d-none mb-3">
+            <label class="form-label text-muted small fw-bold" id="lbl-duracion-estadia" for="inputDuracionEstadia">Cantidad de días</label>
+            <input type="number" class="form-control" id="inputDuracionEstadia" min="1" max="6" placeholder="Ej. 3">
+        </div>
+
+        <!-- Fila 3: Fecha del primer cobro -->
+        <div>
+            <label class="form-label text-muted small fw-bold" for="cli-fecha-inicio">Fecha del primer cobro</label>
+            <input type="date" class="form-control" id="cli-fecha-inicio" required>
+        </div>
+    </div>
+
+    <!-- Bloque 5 (Pagos Inferiores) -->
+    <div class="mb-4">
+        <!-- Checkbox: Registrar pago inicial ahora -->
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="chk-pago-inicial">
+            <label class="form-check-label fw-bold text-dark small" for="chk-pago-inicial">
+                Registrar pago inicial ahora
+            </label>
+        </div>
+
+        <!-- Opciones de pago inicial desplegables (Fase 2.6) -->
+        <div id="opciones-pago-inicial" class="d-none mb-3 p-3 border rounded-3 bg-light">
+            <!-- 3 Modalidades de Pago dinámicas -->
+            <div class="mb-3" id="contenedorModalidadesPago">
+                <label class="form-label small fw-bold text-muted mb-2">Modalidad de pago inicial:</label>
+                <div class="d-flex flex-column gap-2">
+                    <div class="form-check p-2 ps-4 border rounded-2 bg-white">
+                        <input class="form-check-input" type="radio" name="modalidadPago" id="radioOpcion1" value="opcion1" checked>
+                        <label class="form-check-label small fw-bold text-dark w-100 ps-1" id="lblRadioOpcion1" for="radioOpcion1">
+                            Pago del primer mes
+                        </label>
+                    </div>
+                    <div class="form-check p-2 ps-4 border rounded-2 bg-white" id="contenedorRadioOpcion2">
+                        <input class="form-check-input" type="radio" name="modalidadPago" id="radioOpcion2" value="opcion2">
+                        <label class="form-check-label small fw-bold text-dark w-100 ps-1" id="lblRadioOpcion2" for="radioOpcion2">
+                            Pago incompleto (Genera deuda)
+                        </label>
+                    </div>
+                    <div class="form-check p-2 ps-4 border rounded-2 bg-white" id="contenedorRadioOpcion3">
+                        <input class="form-check-input" type="radio" name="modalidadPago" id="radioOpcion3" value="opcion3">
+                        <label class="form-check-label small fw-bold text-dark w-100 ps-1" id="lblRadioOpcion3" for="radioOpcion3">
+                            Meses por adelantado
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenedor Tiempo / Periodos (divParcialTiempo) -->
+            <div id="divParcialTiempo" class="d-none mb-3 p-3 bg-white border rounded-3">
+                <label class="form-label small fw-bold text-muted mb-1" id="labelCantidadPagada" for="inputPeriodosPagados">Días pagados</label>
+                <input type="number" class="form-control form-control-sm mb-2" id="inputPeriodosPagados" min="2" value="2">
+                <div id="textoTotalCobrar" class="d-none fw-bold text-primary small">Total a cobrar: S/ 0.00</div>
+            </div>
+
+            <!-- Contenedor Dinero / Deuda (divAdelantoDinero) -->
+            <div id="divAdelantoDinero" class="d-none mb-3 p-3 bg-white border rounded-3">
+                <label class="form-label small fw-bold text-muted mb-1" id="labelMontoDinero" for="inputMontoAdelanto">Monto pagado</label>
+                <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text bg-light fw-bold text-muted border-end-0">S/</span>
+                    <input type="number" step="0.01" min="0" class="form-control border-start-0" id="inputMontoAdelanto" placeholder="0.00">
+                </div>
+                <div id="textoDeudaRestante" class="fw-bold text-danger small mb-2">Deuda restante: S/ 0.00</div>
+                <div>
+                    <label class="form-label text-muted small fw-bold mb-1" id="labelFechaCobroDeuda" for="inputFechaCobroDeuda">Fecha de cobro de deuda</label>
+                    <input type="date" class="form-control form-control-sm" id="inputFechaCobroDeuda">
+                </div>
+            </div>
+        </div>
+
+        <!-- Contenedor para Depósito de Garantía (Opcional) - Exclusivo para Alquiler -->
+        <div class="border rounded-3 p-3 bg-light" id="bloque-garantia">
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="chk-tiene-garantia">
+                <label class="form-check-label fw-bold text-dark small" for="chk-tiene-garantia">
+                    Incluir depósito de garantía (Opcional)
+                </label>
+            </div>
+            
+            <div id="opciones-garantia" class="d-none mt-3 pt-3 border-top">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted" for="cli-garantia-monto">Monto (S/)</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white fw-bold">S/</span>
+                        <input type="number" step="0.01" class="form-control" id="cli-garantia-monto" placeholder="0.00">
+                    </div>
+                </div>
+                
+                <label class="form-label small fw-bold text-muted mb-2">Estado:</label>
+                <div class="d-flex gap-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="estado_garantia" id="garantia-pagada-ahora" value="pagada" checked>
+                        <label class="form-check-label small fw-bold text-dark" for="garantia-pagada-ahora">
+                            Pagada ahora
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="estado_garantia" id="garantia-por-cobrar" value="por_cobrar">
+                        <label class="form-check-label small fw-bold text-dark" for="garantia-por-cobrar">
+                            Por cobrar
+                        </label>
+                    </div>
+                </div>
+
+                <div id="div-fecha-garantia" class="d-none mt-3">
+                    <label class="form-label text-muted small fw-bold" for="cli-garantia-fecha">¿Cuándo cobrará la garantía?</label>
+                    <input type="date" class="form-control form-control-sm" id="cli-garantia-fecha">
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+`;
+
+// Plantilla para registro de Nuevo egreso
+const templateEgreso = `
+<form id="form-nuevo-egreso">
+    <div class="mb-3">
+        <label class="form-label text-muted small fw-bold">Concepto</label>
+        <input type="text" class="form-control" id="egr-motivo" placeholder="Ej: Pago de luz, compras, materiales..." required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label text-muted small fw-bold">Importe (S/)</label>
+        <div class="input-group">
+            <span class="input-group-text bg-danger text-white border-danger fw-bold">S/</span>
+            <input type="number" step="0.01" min="0.1" class="form-control border-danger" id="egr-monto" placeholder="0.00" required>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="form-label text-muted small fw-bold">Fecha</label>
+        <input type="date" class="form-control" id="egr-fecha" required>
+    </div>
+    <div class="mb-4">
+        <label class="form-label text-muted small fw-bold">Categoría</label>
+        <select class="form-select" id="egr-categoria" required>
+            <option value="Servicios básicos">Servicios básicos</option>
+            <option value="Mantenimiento">Mantenimiento</option>
+            <option value="Compras">Compras</option>
+            <option value="Otros">Otros</option>
+        </select>
+    </div>
+</form>
+`;
+
+// Controlador de Vista Dinámico
+function renderizarFormularioRegistro() {
+    const contenedor = document.getElementById('contenedorDinamicoRegistro');
+    if (!contenedor) return;
+
+    const radioCliente = document.getElementById('reg-raiz-cliente');
+    const esCliente = radioCliente ? radioCliente.checked : true;
+
+    if (esCliente) {
+        contenedor.innerHTML = templateCliente;
+        const formCliente = document.getElementById('form-nuevo-cliente');
+        if (formCliente) {
+            formCliente.addEventListener('submit', guardarNuevoCliente);
+        }
+
+        // Inicializar categorías y listener para selectCategoriaPrincipal (Fase 3.6)
+        if (typeof cargarCategoriasPrincipales === 'function') {
+            cargarCategoriasPrincipales();
+        }
+        const selectCategoria = document.getElementById('selectCategoriaPrincipal');
+        if (selectCategoria) {
+            selectCategoria.addEventListener('change', actualizarConfiguracionServicio);
+        }
+        const radiosActividad = document.querySelectorAll('input[name="tipo_actividad_servicio"]');
+        radiosActividad.forEach(r => {
+            r.addEventListener('change', actualizarConfiguracionServicio);
+        });
+
+        // Listener dinámico para inventario (+ Crear nuevo...)
+        const selectInventario = document.getElementById('selectInventario');
+        if (selectInventario) {
+            selectInventario.addEventListener('change', manejarCambioInventario);
+        }
+
+        // Listener para frecuencia (regla de días para alquiler diario y límites)
+        const selectFrecuencia = document.getElementById('cli-frecuencia');
+        if (selectFrecuencia) {
+            selectFrecuencia.addEventListener('change', manejarCambioFrecuencia);
+        }
+
+        // Listener para Duración de Estadía (validación cruzada de límites y fecha límite)
+        const inputEstadia = document.getElementById('inputDuracionEstadia');
+        if (inputEstadia) {
+            const manejarCambioEstadia = () => {
+                actualizarLimitePago();
+                actualizarLimitesFechas();
+                calcularDeudaAdelanto();
+            };
+            inputEstadia.addEventListener('input', manejarCambioEstadia);
+            inputEstadia.addEventListener('change', manejarCambioEstadia);
+        }
+
+        // Listener para Fecha del primer cobro (actualiza min/max en calendarios de deuda y garantía)
+        const fechaInicio = document.getElementById('cli-fecha-inicio');
+        if (fechaInicio) {
+            fechaInicio.addEventListener('change', actualizarLimitesFechas);
+            fechaInicio.addEventListener('input', actualizarLimitesFechas);
+        }
+
+        // Listener para las 3 opciones de pago inicial (Fase 2.6)
+        const radiosModalidad = document.querySelectorAll('input[name="modalidadPago"]');
+        radiosModalidad.forEach(r => {
+            r.addEventListener('change', manejarCambioModalidadPago);
+        });
+
+        // Listener para cálculo en tiempo real de deuda y totales (Blindaje de adelantos)
+        const inputAdelanto = document.getElementById('inputMontoAdelanto');
+        if (inputAdelanto) {
+            inputAdelanto.addEventListener('input', calcularDeudaAdelanto);
+            inputAdelanto.addEventListener('change', calcularDeudaAdelanto);
+        }
+        const inputMonto = document.getElementById('cli-monto');
+        if (inputMonto) {
+            inputMonto.addEventListener('input', () => {
+                calcularDeudaAdelanto();
+                calcularTotalAdelantado();
+            });
+        }
+
+        // Listener para periodos pagados / meses adelantados
+        const inputPeriodos = document.getElementById('inputPeriodosPagados');
+        if (inputPeriodos) {
+            const validarPeriodos = () => {
+                const selectFreq = document.getElementById('cli-frecuencia');
+                const radioSel = document.querySelector('input[name="modalidadPago"]:checked');
+                const f = selectFreq ? selectFreq.value : 'mensual';
+                const mod = radioSel ? radioSel.value : 'opcion1';
+
+                if (f === 'mensual' && mod === 'opcion3') {
+                    if (inputPeriodos.value && parseInt(inputPeriodos.value) < 2) {
+                        inputPeriodos.value = "2";
+                    }
+                } else if (f === 'diario' || f === 'semanal') {
+                    actualizarLimitePago();
+                }
+                calcularTotalAdelantado();
+            };
+            inputPeriodos.addEventListener('input', validarPeriodos);
+            inputPeriodos.addEventListener('change', validarPeriodos);
+        }
+
+        // Listeners para calendarios (Deuda y Garantía) para blanquear si está fuera de [min, max]
+        const inputFechaDeuda = document.getElementById('inputFechaCobroDeuda');
+        const inputFechaGarantia = document.getElementById('cli-garantia-fecha');
+        const validarLimitesFecha = (input) => {
+            if (!input || !input.value) return;
+            if ((input.min && input.value < input.min) || (input.max && input.value > input.max)) {
+                input.value = '';
+            }
+        };
+
+        if (inputFechaDeuda) {
+            inputFechaDeuda.addEventListener('change', () => validarLimitesFecha(inputFechaDeuda));
+            inputFechaDeuda.addEventListener('blur', () => validarLimitesFecha(inputFechaDeuda));
+        }
+        if (inputFechaGarantia) {
+            inputFechaGarantia.addEventListener('change', () => validarLimitesFecha(inputFechaGarantia));
+            inputFechaGarantia.addEventListener('blur', () => validarLimitesFecha(inputFechaGarantia));
+        }
+
+        // Listener para el switch de garantía
+        const chkGarantia = document.getElementById('chk-tiene-garantia');
+        if (chkGarantia) {
+            chkGarantia.addEventListener('change', () => {
+                const opcGar = document.getElementById('opciones-garantia');
+                if (opcGar) opcGar.classList.toggle('d-none', !chkGarantia.checked);
+            });
+        }
+
+        // Listener para los radios de estado de garantía
+        const radiosEstadoGar = document.querySelectorAll('input[name="estado_garantia"]');
+        radiosEstadoGar.forEach(rg => {
+            rg.addEventListener('change', () => {
+                const divFecha = document.getElementById('div-fecha-garantia');
+                const porCobrar = document.getElementById('garantia-por-cobrar');
+                if (divFecha && porCobrar) {
+                    divFecha.classList.toggle('d-none', !porCobrar.checked);
+                }
+            });
+        });
+
+        // Listener para checkbox de pago inicial
+        const chkPagoIni = document.getElementById('chk-pago-inicial');
+        if (chkPagoIni) {
+            chkPagoIni.addEventListener('change', () => {
+                const opcPago = document.getElementById('opciones-pago-inicial');
+                if (opcPago) {
+                    opcPago.classList.toggle('d-none', !chkPagoIni.checked);
+                    if (chkPagoIni.checked) {
+                        manejarCambioModalidadPago();
+                    }
+                }
+            });
+        }
+
+        // Asignar fecha de hoy por defecto al campo fecha de inicio
+        if (fechaInicio && !fechaInicio.value) {
+            const hoyObj = new Date();
+            const yyyy = hoyObj.getFullYear();
+            const mm = String(hoyObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(hoyObj.getDate()).padStart(2, '0');
+            fechaInicio.value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        // Ejecutar estado inicial
+        actualizarConfiguracionServicio();
+        manejarCambioFrecuencia();
+        actualizarLimitesFechas();
+    } else {
+        contenedor.innerHTML = templateEgreso;
+        const formEgreso = document.getElementById('form-nuevo-egreso');
+        if (formEgreso) {
+            formEgreso.addEventListener('submit', guardarNuevoEgreso);
+        }
+        // Asignar fecha de hoy por defecto al campo fecha de egreso
+        const fechaEgreso = document.getElementById('egr-fecha');
+        if (fechaEgreso && !fechaEgreso.value) {
+            const hoyObj = new Date();
+            const yyyy = hoyObj.getFullYear();
+            const mm = String(hoyObj.getMonth() + 1).padStart(2, '0');
+            const dd = String(hoyObj.getDate()).padStart(2, '0');
+            fechaEgreso.value = `${yyyy}-${mm}-${dd}`;
+        }
+    }
+}
+
+
+// Función para alternar labels/placeholders del input 3 y visibilidad de garantía
+// Función para alternar labels dinámicos del Bloque 3 y visibilidad de garantía
+// Función para cargar habitaciones o servicios guardados en selectInventario
+function cargarOpcionesInventario() {
+    const selectInv = document.getElementById('selectInventario');
+    if (!selectInv) return;
+
+    const selectCat = document.getElementById('selectCategoriaPrincipal');
+    const radioActivo = document.querySelector('input[name="tipo_actividad_servicio"]:checked');
+    const actividad = selectCat ? selectCat.value : (radioActivo ? radioActivo.value : 'alquiler');
+
+    const valorPrevio = selectInv.value;
+    selectInv.innerHTML = '';
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.innerText = 'Seleccionar...';
+    selectInv.appendChild(defaultOpt);
+
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    if (actividad === 'alquiler') {
+        const habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+        habitaciones.forEach(h => {
+            const opt = document.createElement('option');
+            opt.value = h.id;
+            const tieneInquilinoActivo = clientes.some(c => c.activo === true && (c.ref === h.nombre || String(c.ref) === String(h.id)));
+            const estadoHab = tieneInquilinoActivo ? 'Ocupada' : 'Disponible';
+            opt.innerText = `${h.nombre} (${estadoHab})`;
+            selectInv.appendChild(opt);
+        });
+    } else {
+        const servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+        const serviciosFiltrados = servicios.filter(s => {
+            if (actividad === 'academia' || actividad === 'inscripcion') {
+                return !s.tipo || s.tipo === 'academia' || s.tipo === 'inscripcion';
+            }
+            return !s.tipo || s.tipo === actividad;
+        });
+        serviciosFiltrados.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            const cantidadInscritos = clientes.filter(c => c.activo === true && (c.ref === s.nombre || (c.ref && s.nombre && c.ref.trim() === s.nombre.trim()) || String(c.ref) === String(s.id))).length;
+            opt.innerText = `${s.nombre} (${cantidadInscritos} p.)`;
+            selectInv.appendChild(opt);
+        });
+    }
+
+    const crearOpt = document.createElement('option');
+    crearOpt.value = 'crear_nuevo';
+    crearOpt.innerText = '+ Crear nuevo...';
+    selectInv.appendChild(crearOpt);
+
+    const manualOpt = document.createElement('option');
+    manualOpt.value = 'manual';
+    manualOpt.innerText = 'Ingresar manualmente';
+    selectInv.appendChild(manualOpt);
+
+    if (valorPrevio && Array.from(selectInv.options).some(o => o.value === valorPrevio)) {
+        selectInv.value = valorPrevio;
+    }
+}
+window.cargarOpcionesInventario = cargarOpcionesInventario;
+
+// Función para cargar categorías dinámicas en selectCategoriaPrincipal (Fase 3.6)
+function cargarCategoriasPrincipales() {
+    const selectCat = document.getElementById('selectCategoriaPrincipal');
+    if (!selectCat) return;
+
+    const valorPrevio = selectCat.value;
+    const servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    const tiposEstandar = ['alquiler', 'streaming', 'academia', 'otro', 'crear_nuevo', 'nuevo_global'];
+
+    const categoriasPersonalizadas = [...new Set(
+        servicios.map(s => s.tipo).filter(t => t && !tiposEstandar.includes(t.toLowerCase()))
+    )];
+
+    selectCat.innerHTML = `
+        <option value="alquiler">Alquiler de habitación</option>
+        <option value="streaming">Streaming o suscripción</option>
+        <option value="academia">Inscripción de Alumnos</option>
+        <option value="otro">Otro servicio</option>
+    `;
+
+    categoriasPersonalizadas.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.innerText = cat;
+        selectCat.appendChild(opt);
+    });
+
+    const optCrear = document.createElement('option');
+    optCrear.value = 'nuevo_global';
+    optCrear.innerText = '+ Crear nueva categoría...';
+    selectCat.appendChild(optCrear);
+
+    if (valorPrevio && Array.from(selectCat.options).some(o => o.value === valorPrevio)) {
+        selectCat.value = valorPrevio;
+    } else {
+        selectCat.value = 'alquiler';
+    }
+}
+window.cargarCategoriasPrincipales = cargarCategoriasPrincipales;
+
+function actualizarConfiguracionServicio() {
+    const selectCat = document.getElementById('selectCategoriaPrincipal');
+    const radioActivo = document.querySelector('input[name="tipo_actividad_servicio"]:checked');
+    const valor = selectCat ? selectCat.value : (radioActivo ? radioActivo.value : 'alquiler');
+
+    // Input para nueva categoría (Fase 3.6 - nuevo_global)
+    const inputNuevaCat = document.getElementById('inputNuevaCategoriaGlobal');
+    if (inputNuevaCat) {
+        if (valor === 'nuevo_global' || valor === 'crear_nuevo') {
+            inputNuevaCat.classList.remove('d-none');
+            inputNuevaCat.focus();
+        } else {
+            inputNuevaCat.classList.add('d-none');
+            inputNuevaCat.value = '';
+        }
+    }
+
+    const lblInventario = document.getElementById('lbl-select-inventario');
+    const bloqueGarantia = document.getElementById('bloque-garantia');
+
+    if (valor === 'alquiler') {
+        if (lblInventario) lblInventario.innerText = 'Habitación';
+        if (bloqueGarantia) {
+            bloqueGarantia.classList.remove('d-none');
+        }
+    } else if (valor === 'streaming') {
+        if (lblInventario) lblInventario.innerText = 'Servicio o cuenta';
+        if (bloqueGarantia) {
+            bloqueGarantia.classList.add('d-none');
+            const chkGar = document.getElementById('chk-tiene-garantia');
+            if (chkGar) chkGar.checked = false;
+            const opcGar = document.getElementById('opciones-garantia');
+            if (opcGar) opcGar.classList.add('d-none');
+        }
+    } else if (valor === 'academia') {
+        if (lblInventario) lblInventario.innerText = 'Clase o Curso';
+        if (bloqueGarantia) {
+            bloqueGarantia.classList.add('d-none');
+            const chkGar = document.getElementById('chk-tiene-garantia');
+            if (chkGar) chkGar.checked = false;
+            const opcGar = document.getElementById('opciones-garantia');
+            if (opcGar) opcGar.classList.add('d-none');
+        }
+    } else {
+        // 'nuevo_global', 'otro' o cualquier categoría nueva / personalizada
+        if (lblInventario) lblInventario.innerText = 'Ítem o Servicio';
+        if (bloqueGarantia) {
+            bloqueGarantia.classList.add('d-none');
+            const chkGar = document.getElementById('chk-tiene-garantia');
+            if (chkGar) chkGar.checked = false;
+            const opcGar = document.getElementById('opciones-garantia');
+            if (opcGar) opcGar.classList.add('d-none');
+        }
+    }
+
+    cargarOpcionesInventario();
+}
+window.actualizarConfiguracionServicio = actualizarConfiguracionServicio;
+
+// Lógica para "+ Crear nuevo..." en selectInventario
+function manejarCambioInventario() {
+    const selectInv = document.getElementById('selectInventario');
+    const contenedorNuevo = document.getElementById('contenedorNuevoItem');
+    const inputNuevo = document.getElementById('inputNombreNuevoItem');
+
+    if (!selectInv || !contenedorNuevo) return;
+
+    if (selectInv.value === 'crear_nuevo') {
+        contenedorNuevo.classList.remove('d-none');
+        if (inputNuevo) {
+            inputNuevo.placeholder = "Ej. 305 o Nombre del servicio";
+            inputNuevo.focus();
+        }
+    } else {
+        contenedorNuevo.classList.add('d-none');
+        if (inputNuevo) inputNuevo.value = '';
+    }
+}
+window.manejarCambioInventario = manejarCambioInventario;
+
+// Regla de Frecuencia: Duración de estadía, límites matemáticos y mutación de radios (Fase 2.8)
+function manejarCambioFrecuencia() {
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const contenedorEstadia = document.getElementById('contenedor-duracion-estadia');
+    const lblEstadia = document.getElementById('lbl-duracion-estadia');
+    const inputEstadia = document.getElementById('inputDuracionEstadia');
+    const inputMonto = document.getElementById('cli-monto');
+
+    const lblOpcion1 = document.getElementById('lblRadioOpcion1');
+    const lblOpcion2 = document.getElementById('lblRadioOpcion2');
+    const lblOpcion3 = document.getElementById('lblRadioOpcion3');
+    const contenedorRadioOpcion3 = document.getElementById('contenedorRadioOpcion3');
+    const radioOpcion3 = document.getElementById('radioOpcion3');
+    const radioOpcion1 = document.getElementById('radioOpcion1');
+
+    if (!selectFrecuencia) return;
+    const freq = selectFrecuencia.value;
+
+    // 1. Configuración de Duración de Estadía según Frecuencia
+    if (freq === 'diario') {
+        if (inputMonto && document.activeElement === selectFrecuencia) {
+            inputMonto.value = '';
+            inputMonto.focus();
+        }
+        if (contenedorEstadia) contenedorEstadia.classList.remove('d-none');
+        if (lblEstadia) lblEstadia.innerText = "Cantidad de días";
+        if (inputEstadia) {
+            inputEstadia.min = "1";
+            inputEstadia.max = "6";
+            if (!inputEstadia.value || parseInt(inputEstadia.value) < 1) {
+                inputEstadia.value = "1";
+            }
+        }
+    } else if (freq === 'semanal') {
+        if (contenedorEstadia) contenedorEstadia.classList.remove('d-none');
+        if (lblEstadia) lblEstadia.innerText = "Cantidad de semanas";
+        if (inputEstadia) {
+            inputEstadia.min = "1";
+            inputEstadia.max = "3";
+            if (!inputEstadia.value || parseInt(inputEstadia.value) < 1) {
+                inputEstadia.value = "1";
+            }
+        }
+    } else {
+        // Quincenal o Mensual (Continua)
+        if (contenedorEstadia) {
+            contenedorEstadia.classList.add('d-none');
+            if (inputEstadia) inputEstadia.value = '';
+        }
+    }
+
+    // 2. Mutación de Textos (Opción 1) y Candados de Opciones
+    if (freq === 'mensual') {
+        if (lblOpcion1) lblOpcion1.innerText = "Pago del primer mes";
+        if (lblOpcion2) lblOpcion2.innerText = "Pago incompleto (Genera deuda)";
+        if (lblOpcion3) lblOpcion3.innerText = "Meses por adelantado";
+        if (contenedorRadioOpcion3) contenedorRadioOpcion3.classList.remove('d-none');
+    } else if (freq === 'quincenal') {
+        if (lblOpcion1) lblOpcion1.innerText = "Pago de la primera quincena";
+        if (lblOpcion2) lblOpcion2.innerText = "Pago incompleto (Genera deuda)";
+        if (lblOpcion3) lblOpcion3.innerText = "Quincenas por adelantado";
+        // Candado Quincenal: Se oculta por completo la Opción 3
+        if (contenedorRadioOpcion3) contenedorRadioOpcion3.classList.add('d-none');
+        if (radioOpcion3 && radioOpcion3.checked && radioOpcion1) {
+            radioOpcion1.checked = true;
+        }
+    } else if (freq === 'diario') {
+        if (lblOpcion1) lblOpcion1.innerText = "Pago total de la estadía";
+        if (lblOpcion2) lblOpcion2.innerText = "Pago de algunos días";
+        if (lblOpcion3) lblOpcion3.innerText = "Adelanto (Genera deuda)";
+        if (contenedorRadioOpcion3) contenedorRadioOpcion3.classList.remove('d-none');
+    } else if (freq === 'semanal') {
+        if (lblOpcion1) lblOpcion1.innerText = "Pago total de la estadía";
+        if (lblOpcion2) lblOpcion2.innerText = "Pago de algunas semanas";
+        if (lblOpcion3) lblOpcion3.innerText = "Adelanto (Genera deuda)";
+        if (contenedorRadioOpcion3) contenedorRadioOpcion3.classList.remove('d-none');
+    }
+
+    // 3. Actualizar vistas, límites y cálculos dependientes
+    actualizarLimitePago();
+    manejarCambioModalidadPago();
+    actualizarLimitesFechas();
+    calcularDeudaAdelanto();
+    calcularTotalAdelantado();
+}
+window.manejarCambioFrecuencia = manejarCambioFrecuencia;
+
+// Lógica de Modalidad de Pago Dinámica: Total, Incompleto/Periodos, Adelanto/Meses por adelantado
+function manejarCambioModalidadPago() {
+    const radioSeleccionado = document.querySelector('input[name="modalidadPago"]:checked');
+    const modalidad = radioSeleccionado ? radioSeleccionado.value : 'opcion1';
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const freq = selectFrecuencia ? selectFrecuencia.value : 'mensual';
+
+    const divTiempo = document.getElementById('divParcialTiempo');
+    const divDinero = document.getElementById('divAdelantoDinero');
+    const labelCantidad = document.getElementById('labelCantidadPagada');
+    const inputPeriodos = document.getElementById('inputPeriodosPagados');
+    const textoTotal = document.getElementById('textoTotalCobrar');
+    const labelDinero = document.getElementById('labelMontoDinero');
+    const inputAdelanto = document.getElementById('inputMontoAdelanto');
+
+    if (!divTiempo || !divDinero) return;
+
+    if (modalidad === 'opcion1') {
+        // Opción 1: Oculta campos extra en cualquier frecuencia
+        divTiempo.classList.add('d-none');
+        divDinero.classList.add('d-none');
+    } else if (modalidad === 'opcion2') {
+        if (freq === 'mensual' || freq === 'quincenal') {
+            // Opción 2 en Mensual/Quincenal: "Pago incompleto (Genera deuda)"
+            divTiempo.classList.add('d-none');
+            divDinero.classList.remove('d-none');
+            if (labelDinero) labelDinero.innerText = "Monto pagado";
+            if (inputAdelanto) inputAdelanto.focus();
+            actualizarLimitesFechas();
+            calcularDeudaAdelanto();
+        } else {
+            // Opción 2 en Diario/Semanal: "Pago de algunos días/semanas"
+            divTiempo.classList.remove('d-none');
+            divDinero.classList.add('d-none');
+            if (textoTotal) textoTotal.classList.add('d-none');
+            if (labelCantidad) {
+                labelCantidad.innerText = (freq === 'diario') ? "Días pagados" : "Semanas pagadas";
+            }
+            actualizarLimitePago();
+            if (inputPeriodos) inputPeriodos.focus();
+        }
+    } else if (modalidad === 'opcion3') {
+        if (freq === 'mensual') {
+            // Opción 3 en Mensual: "Meses por adelantado" (min="2" value="2")
+            divTiempo.classList.remove('d-none');
+            divDinero.classList.add('d-none');
+            if (textoTotal) textoTotal.classList.remove('d-none');
+            if (labelCantidad) {
+                labelCantidad.innerText = "Cantidad de meses";
+            }
+            if (inputPeriodos) {
+                inputPeriodos.removeAttribute('max');
+                inputPeriodos.min = "2";
+                if (!inputPeriodos.value || parseInt(inputPeriodos.value) < 2) {
+                    inputPeriodos.value = "2";
+                }
+                inputPeriodos.focus();
+            }
+            calcularTotalAdelantado();
+        } else if (freq === 'quincenal') {
+            // Quincenal: Opción 3 oculta
+            divTiempo.classList.add('d-none');
+            divDinero.classList.add('d-none');
+        } else {
+            // Opción 3 en Diario/Semanal: "Adelanto (Genera deuda)"
+            divTiempo.classList.add('d-none');
+            divDinero.classList.remove('d-none');
+            if (labelDinero) labelDinero.innerText = "Adelanto (S/)";
+            if (inputAdelanto) inputAdelanto.focus();
+            actualizarLimitesFechas();
+            calcularDeudaAdelanto();
+        }
+    }
+}
+window.manejarCambioModalidadPago = manejarCambioModalidadPago;
+
+// Blindaje de Adelantos (Cero Saldos Negativos) y Matemática de Deuda:
+// Total = Importe * (Estadía || 1)
+// Si Number(inputAdelanto.value) > Total => forzar inputAdelanto.value = Total
+// Deuda = Total - Adelanto
+function calcularDeudaAdelanto() {
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const inputMonto = document.getElementById('cli-monto');
+    const inputEstadia = document.getElementById('inputDuracionEstadia');
+    const inputAdelanto = document.getElementById('inputMontoAdelanto');
+    const textoDeuda = document.getElementById('textoDeudaRestante');
+
+    if (!textoDeuda) return;
+
+    const freq = selectFrecuencia ? selectFrecuencia.value : 'mensual';
+    const importe = parseFloat(inputMonto && inputMonto.value ? inputMonto.value : 0) || 0;
+
+    let total = importe;
+    if (freq === 'diario' || freq === 'semanal') {
+        const estadia = parseInt(inputEstadia && inputEstadia.value ? inputEstadia.value : 1) || 1;
+        total = importe * estadia;
+    }
+
+    // Blindaje de Adelantos: Cero Saldos Negativos (Fase 2.8)
+    if (inputAdelanto && inputAdelanto.value !== '') {
+        const valAdelanto = Number(inputAdelanto.value);
+        if (valAdelanto > total) {
+            inputAdelanto.value = total;
+        }
+    }
+
+    const adelanto = parseFloat(inputAdelanto && inputAdelanto.value ? inputAdelanto.value : 0) || 0;
+    const deuda = Math.max(0, total - adelanto);
+    textoDeuda.innerText = `Deuda restante: S/ ${deuda.toFixed(2)}`;
+}
+window.calcularDeudaAdelanto = calcularDeudaAdelanto;
+window.calcularDeuda = calcularDeudaAdelanto;
+
+// Total a cobrar para Opción 3 en Mensual (Meses por adelantado)
+function calcularTotalAdelantado() {
+    const inputMonto = document.getElementById('cli-monto');
+    const inputPeriodos = document.getElementById('inputPeriodosPagados');
+    const textoTotal = document.getElementById('textoTotalCobrar');
+
+    if (!textoTotal) return;
+
+    const importe = parseFloat(inputMonto && inputMonto.value ? inputMonto.value : 0) || 0;
+    const cantPeriodos = parseInt(inputPeriodos && inputPeriodos.value ? inputPeriodos.value : 1) || 1;
+    const total = importe * cantPeriodos;
+
+    textoTotal.innerText = `Total a cobrar: S/ ${total.toFixed(2)}`;
+}
+window.calcularTotalAdelantado = calcularTotalAdelantado;
+
+// Controlador Universal de Fechas (Fase 2.8)
+// - Toma "Fecha del primer cobro" (o Date.now() si vacía) como fechaBase.
+// - Setea MIN = fechaBase en Deuda y Garantía.
+// - Setea MAX en Deuda y Garantía según Frecuencia:
+//   Diario: fechaBase + DuracionEstadia (días)
+//   Semanal: fechaBase + (DuracionEstadia * 7) (días)
+//   Quincenal: fechaBase + 15 días
+//   Mensual: fechaBase + 30 días
+// - Si el valor actual excede el nuevo max o es menor al min, blanquea el input (value = '').
+function actualizarLimitesFechas() {
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const inputFechaInicio = document.getElementById('cli-fecha-inicio');
+    const inputEstadia = document.getElementById('inputDuracionEstadia');
+    const inputFechaDeuda = document.getElementById('inputFechaCobroDeuda');
+    const inputFechaGarantia = document.getElementById('cli-garantia-fecha');
+
+    // 1. Obtener fechaBase (Fecha del primer cobro o Date.now())
+    let fechaBaseObj;
+    if (inputFechaInicio && inputFechaInicio.value && inputFechaInicio.value.includes('-')) {
+        const [y, m, d] = inputFechaInicio.value.split('-').map(Number);
+        fechaBaseObj = new Date(y, m - 1, d);
+    } else {
+        fechaBaseObj = new Date();
+    }
+
+    const yyyyBase = fechaBaseObj.getFullYear();
+    const mmBase = String(fechaBaseObj.getMonth() + 1).padStart(2, '0');
+    const ddBase = String(fechaBaseObj.getDate()).padStart(2, '0');
+    const fechaBaseStr = `${yyyyBase}-${mmBase}-${ddBase}`;
+
+    // 2. Calcular tope máximo sumando días a fechaBase según la Frecuencia
+    const freq = selectFrecuencia ? selectFrecuencia.value : 'mensual';
+    let diasASumar = 30;
+
+    if (freq === 'diario') {
+        const estadia = parseInt(inputEstadia && inputEstadia.value ? inputEstadia.value : 1) || 1;
+        diasASumar = estadia;
+    } else if (freq === 'semanal') {
+        const estadia = parseInt(inputEstadia && inputEstadia.value ? inputEstadia.value : 1) || 1;
+        diasASumar = estadia * 7;
+    } else if (freq === 'quincenal') {
+        diasASumar = 15;
+    } else if (freq === 'mensual') {
+        diasASumar = 30;
+    }
+
+    const fechaMaxObj = new Date(fechaBaseObj.getFullYear(), fechaBaseObj.getMonth(), fechaBaseObj.getDate());
+    fechaMaxObj.setDate(fechaMaxObj.getDate() + diasASumar);
+
+    const yyyyMax = fechaMaxObj.getFullYear();
+    const mmMax = String(fechaMaxObj.getMonth() + 1).padStart(2, '0');
+    const ddMax = String(fechaMaxObj.getDate()).padStart(2, '0');
+    const fechaMaxStr = `${yyyyMax}-${mmMax}-${ddMax}`;
+
+    // 3. Aplicar MIN y MAX a AMBOS inputs (Deuda y Garantía) y blanquear si está fuera de rango
+    [inputFechaDeuda, inputFechaGarantia].forEach(input => {
+        if (!input) return;
+        input.min = fechaBaseStr;
+        input.max = fechaMaxStr;
+
+        if (input.value) {
+            if (input.value < input.min || input.value > input.max) {
+                input.value = '';
+            }
+        }
+    });
+}
+window.actualizarLimitesFechas = actualizarLimitesFechas;
+window.calcularFechaLimiteDeuda = actualizarLimitesFechas;
+
+// Regla de "N-1" para Diario y Semanal, y Candados de Periodos
+function actualizarLimitePago() {
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const inputEstadia = document.getElementById('inputDuracionEstadia');
+    const inputPeriodos = document.getElementById('inputPeriodosPagados');
+    const contenedorRadioOpcion2 = document.getElementById('contenedorRadioOpcion2');
+    const radioOpcion2 = document.getElementById('radioOpcion2');
+    const radioOpcion1 = document.getElementById('radioOpcion1');
+
+    if (!selectFrecuencia) return;
+    const freq = selectFrecuencia.value;
+
+    if (freq === 'diario' || freq === 'semanal') {
+        const estadia = parseInt(inputEstadia && inputEstadia.value ? inputEstadia.value : 1) || 1;
+
+        if (estadia <= 1) {
+            if (contenedorRadioOpcion2) contenedorRadioOpcion2.classList.add('d-none');
+            if (radioOpcion2 && radioOpcion2.checked && radioOpcion1) {
+                radioOpcion1.checked = true;
+                manejarCambioModalidadPago();
+            }
+        } else {
+            if (contenedorRadioOpcion2) contenedorRadioOpcion2.classList.remove('d-none');
+            if (inputPeriodos) {
+                const maxPeriodos = estadia - 1;
+                inputPeriodos.min = "1";
+                inputPeriodos.max = String(maxPeriodos);
+                if (parseInt(inputPeriodos.value) > maxPeriodos) {
+                    inputPeriodos.value = String(maxPeriodos);
+                }
+                if (!inputPeriodos.value || parseInt(inputPeriodos.value) < 1) {
+                    inputPeriodos.value = "1";
+                }
+            }
+        }
+    } else if (freq === 'mensual') {
+        if (contenedorRadioOpcion2) contenedorRadioOpcion2.classList.remove('d-none');
+        if (inputPeriodos) {
+            inputPeriodos.removeAttribute('max');
+            inputPeriodos.min = "2";
+            if (!inputPeriodos.value || parseInt(inputPeriodos.value) < 2) {
+                inputPeriodos.value = "2";
+            }
+        }
+    } else if (freq === 'quincenal') {
+        if (contenedorRadioOpcion2) contenedorRadioOpcion2.classList.remove('d-none');
+        if (inputPeriodos) {
+            inputPeriodos.removeAttribute('max');
+            inputPeriodos.min = "1";
+        }
+    }
+}
+window.actualizarLimitePago = actualizarLimitePago;
+
+// Controlador Principal de Guardado Unificado (Fase 3 - Esquema v2.0)
+function guardarRegistroUnificado(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    // 1. Bifurcación Principal: ¿Cliente o Egreso?
+    const radioEgreso = document.getElementById('reg-raiz-egreso');
+    const esEgreso = radioEgreso ? radioEgreso.checked : false;
+
+    if (esEgreso) {
+        // ==========================================
+        // --- CASO A (Egreso) ---
+        // ==========================================
+        const formEgreso = document.getElementById('form-nuevo-egreso');
+        if (formEgreso && formEgreso.reportValidity && !formEgreso.reportValidity()) {
+            return;
+        }
+
+        const inputMotivo = document.getElementById('egr-motivo');
+        const inputMonto = document.getElementById('egr-monto');
+        const inputFecha = document.getElementById('egr-fecha');
+        const selectCat = document.getElementById('egr-categoria');
+
+        const fechaVal = (inputFecha && inputFecha.value) ? inputFecha.value : new Date().toISOString().split('T')[0];
+        const [anio, mes, dia] = fechaVal.split('-').map(Number);
+
+        const nuevoEgreso = {
+            id: Date.now(),
+            motivo: inputMotivo ? inputMotivo.value.trim() : 'Gasto operativo',
+            monto: parseFloat(inputMonto ? inputMonto.value : 0) || 0,
+            fecha: fechaVal,
+            dia: dia || 1,
+            mes: mes || (new Date().getMonth() + 1),
+            año: anio || new Date().getFullYear(),
+            categoria: selectCat ? selectCat.value : 'Otros'
+        };
+
+        let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+        egresos.push(nuevoEgreso);
+        localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
+
+        if (formEgreso) formEgreso.reset();
+        reiniciarVistaRegistro();
+        if (typeof mostrarToastDeshacer === 'function') {
+            mostrarToastDeshacer("Registro guardado correctamente");
+        }
+        alert("Registro guardado correctamente");
+        renderizarDashboard();
+        renderizarEstadisticas();
+        navegar('dashboard');
+        return;
+    }
+
+    // ==========================================
+    // --- CASO B (Cliente y cobros) ---
+    // ==========================================
+    const formCliente = document.getElementById('form-nuevo-cliente');
+    if (formCliente && formCliente.reportValidity && !formCliente.reportValidity()) {
+        return;
+    }
+
+    // 1. Capturar datos de Persona y Configuración (Fase 2.1 y Fase 3.6)
+    const selectCat = document.getElementById('selectCategoriaPrincipal');
+    const radioActividad = document.querySelector('input[name="tipo_actividad_servicio"]:checked');
+    let tipoServicio = selectCat ? selectCat.value : (radioActividad ? radioActividad.value : 'alquiler');
+
+    if (tipoServicio === 'nuevo_global' || tipoServicio === 'crear_nuevo') {
+        const inputNuevaCat = document.getElementById('inputNuevaCategoriaGlobal');
+        const catPersonalizada = inputNuevaCat ? inputNuevaCat.value.trim() : '';
+        if (!catPersonalizada) {
+            alert("⚠️ Por favor ingresa el nombre de la nueva categoría.");
+            if (inputNuevaCat) inputNuevaCat.focus();
+            return;
+        }
+        tipoServicio = catPersonalizada;
+    }
+
+    const nombre = document.getElementById('cli-nombre') ? document.getElementById('cli-nombre').value.trim() : '';
+    const apellido = document.getElementById('cli-apellido') ? document.getElementById('cli-apellido').value.trim() : '';
+    const monto = parseFloat(document.getElementById('cli-monto') ? document.getElementById('cli-monto').value : 0) || 0;
+    const selectFrecuencia = document.getElementById('cli-frecuencia');
+    const frecuencia = selectFrecuencia ? selectFrecuencia.value : 'mensual';
+
+    const inputEstadia = document.getElementById('inputDuracionEstadia');
+    const duracionEstadia = (frecuencia === 'diario' || frecuencia === 'semanal')
+        ? (parseInt(inputEstadia && inputEstadia.value ? inputEstadia.value : 1) || 1)
+        : null;
+
+    const inputFechaInicio = document.getElementById('cli-fecha-inicio');
+    const fechaInput = (inputFechaInicio && inputFechaInicio.value)
+        ? inputFechaInicio.value
+        : new Date().toISOString().split('T')[0];
+    const [anioIni, mesIni, diaIni] = fechaInput.split('-').map(Number);
+
+    // 2. Gestión de Inventario (aldia_habitaciones / aldia_servicios)
+    const selectInv = document.getElementById('selectInventario');
+    const valorInv = selectInv ? selectInv.value : '';
+    const inputNuevo = document.getElementById('inputNombreNuevoItem');
+    const nombreNuevo = inputNuevo ? inputNuevo.value.trim() : '';
+
+    let nombreRef = '';
+    let habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+
+    if (valorInv === 'crear_nuevo' || valorInv === 'nuevo') {
+        nombreRef = nombreNuevo || (tipoServicio === 'alquiler' ? 'Habitación' : 'Servicio');
+        if (tipoServicio === 'alquiler') {
+            habitaciones.push({
+                id: Date.now(),
+                nombre: nombreRef,
+                precio_base: monto,
+                frecuencia_base: frecuencia,
+                estado: 'Ocupada'
+            });
+            localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+        } else {
+            servicios.push({
+                id: Date.now(),
+                nombre: nombreRef,
+                precio_base: monto,
+                frecuencia_base: frecuencia,
+                tipo: tipoServicio
+            });
+            localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+        }
+    } else if (valorInv === 'manual') {
+        nombreRef = nombreNuevo || (tipoServicio === 'alquiler' ? 'Habitación' : 'Servicio');
+    } else if (valorInv) {
+        if (tipoServicio === 'alquiler') {
+            const habExistente = habitaciones.find(h => String(h.id) === String(valorInv) || h.nombre === valorInv);
+            if (habExistente) {
+                habExistente.estado = 'Ocupada';
+                nombreRef = habExistente.nombre;
+                localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+            } else {
+                nombreRef = valorInv;
+            }
+        } else {
+            const servExistente = servicios.find(s => String(s.id) === String(valorInv) || s.nombre === valorInv);
+            if (servExistente) {
+                if (servExistente.estado) {
+                    delete servExistente.estado;
+                    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+                }
+                nombreRef = servExistente.nombre;
+            } else {
+                nombreRef = valorInv;
+            }
+        }
+    } else {
+        nombreRef = nombreNuevo || (tipoServicio === 'alquiler' ? 'Habitación' : 'Servicio');
+    }
+
+    // 3. Capturar datos de Garantía (si aplica)
+    const chkGarantia = document.getElementById('chk-tiene-garantia');
+    const tieneGarantia = (tipoServicio === 'alquiler') && chkGarantia && chkGarantia.checked;
+    const montoGarantia = tieneGarantia
+        ? (parseFloat(document.getElementById('cli-garantia-monto') ? document.getElementById('cli-garantia-monto').value : 0) || 0)
+        : 0;
+
+    const radioGarPagada = document.getElementById('garantia-pagada-ahora');
+    const pagadaGarantia = tieneGarantia && radioGarPagada ? radioGarPagada.checked : false;
+    const inputFechaGar = document.getElementById('cli-garantia-fecha');
+    const fechaGarantia = (tieneGarantia && !pagadaGarantia && inputFechaGar) ? inputFechaGar.value : '';
+
+    if (tieneGarantia) {
+        if (montoGarantia <= 0) {
+            alert("⚠️ ¡Atención!\nHas indicado que aplica garantía, pero el monto es 0 o está vacío.");
+            const elMonto = document.getElementById('cli-garantia-monto');
+            if (elMonto) elMonto.focus();
+            return;
+        }
+        if (!pagadaGarantia && !fechaGarantia) {
+            alert("⚠️ ¡Atención!\nHas indicado que hay una garantía pendiente, pero no has seleccionado la fecha de cobro.");
+            if (inputFechaGar) inputFechaGar.focus();
+            return;
+        }
+    }
+
+    // 4. Gestión del Cliente (aldia_clientes)
+    const idCliente = Date.now();
+    const nuevoCliente = {
+        id: idCliente,
+        tipo_servicio: tipoServicio,
+        nombre: nombre,
+        apellido: apellido,
+        monto: monto,
+        frecuencia: frecuencia,
+        duracion_estadia: duracionEstadia,
+        ref: nombreRef,
+        fecha_inicio: fechaInput,
+        dia: diaIni || 1,
+        activo: true,
+        garantia_monto: tieneGarantia ? montoGarantia : 0,
+        garantia_pagada: tieneGarantia ? pagadaGarantia : false,
+        garantia_fecha: fechaGarantia
+    };
+
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    clientes.push(nuevoCliente);
+    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+
+    // 5. Gestión de Pagos e Ingresos (aldia_pagos) - Fase 3.2 Estructura Estricta
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    const chkPagoInicial = document.getElementById('chk-pago-inicial');
+    const tienePagoInicial = chkPagoInicial ? chkPagoInicial.checked : false;
+
+    // Cálculo dinámico universal del Total según la frecuencia seleccionada
+    const totalCalculado = (frecuencia === 'diario' || frecuencia === 'semanal')
+        ? (monto * (duracionEstadia || 1))
+        : monto;
+
+    const inputFechaDeuda = document.getElementById('inputFechaCobroDeuda');
+    const fechaVencDeuda = (inputFechaDeuda && inputFechaDeuda.value) ? inputFechaDeuda.value : fechaInput;
+
+    if (!tienePagoInicial) {
+        // Sin pago inicial: Cuota pendiente total
+        pagos.push({
+            id: Date.now() + 1,
+            cliente_id: idCliente,
+            mes: mesIni,
+            año: anioIni,
+            monto: totalCalculado,
+            pagado: false,
+            metodo: "",
+            historico: `${nombre} ${apellido}`.trim(),
+            es_garantia: false,
+            fecha_vencimiento: fechaInput
+        });
+    } else {
+        const radioModalidad = document.querySelector('input[name="modalidadPago"]:checked');
+        const modalidad = radioModalidad ? radioModalidad.value : 'opcion1';
+
+        if (modalidad === 'opcion1') {
+            // Pago Total de la estadía o periodo
+            pagos.push({
+                id: Date.now(),
+                cliente_id: idCliente,
+                mes: mesIni,
+                año: anioIni,
+                monto: totalCalculado,
+                pagado: true,
+                metodo: 'Efectivo',
+                historico: `${nombre} ${apellido}`.trim(),
+                es_garantia: false,
+                fecha_pago_real: Date.now()
+            });
+        } else if ((frecuencia === 'diario' || frecuencia === 'semanal') && modalidad === 'opcion2') {
+            // Pago Parcial (Tiempo) en Diario/Semanal
+            const inputPeriodos = document.getElementById('inputPeriodosPagados');
+            const periodosPagados = parseInt(inputPeriodos && inputPeriodos.value ? inputPeriodos.value : 1) || 1;
+            const montoPagado = monto * periodosPagados;
+
+            // Registro 1: Ingreso de hoy
+            pagos.push({
+                id: Date.now(),
+                cliente_id: idCliente,
+                mes: mesIni,
+                año: anioIni,
+                monto: montoPagado,
+                pagado: true,
+                metodo: 'Efectivo',
+                historico: `${nombre} ${apellido} (Pago parcial)`.trim(),
+                es_garantia: false,
+                fecha_pago_real: Date.now()
+            });
+
+            // Registro 2 (La Deuda): Periodos restantes
+            const totalEstadia = duracionEstadia || 1;
+            if (periodosPagados < totalEstadia) {
+                const montoRestante = monto * (totalEstadia - periodosPagados);
+                pagos.push({
+                    id: Date.now() + 1,
+                    cliente_id: idCliente,
+                    mes: mesIni,
+                    año: anioIni,
+                    monto: montoRestante,
+                    pagado: false,
+                    metodo: "",
+                    historico: `${nombre} ${apellido}`.trim(),
+                    es_garantia: false,
+                    fecha_vencimiento: fechaVencDeuda
+                });
+            }
+        } else if (
+            ((frecuencia === 'diario' || frecuencia === 'semanal') && modalidad === 'opcion3') ||
+            ((frecuencia === 'mensual' || frecuencia === 'quincenal') && modalidad === 'opcion2')
+        ) {
+            // Adelanto (Dinero) / Pago Incompleto (Diario, Semanal, Mensual, Quincenal)
+            const inputAdelanto = document.getElementById('inputMontoAdelanto');
+            const montoAdelanto = parseFloat(inputAdelanto && inputAdelanto.value ? inputAdelanto.value : 0) || 0;
+            const deudaRestante = Math.max(0, totalCalculado - montoAdelanto);
+
+            // Registro 1: El ingreso de hoy (Adelanto)
+            pagos.push({
+                id: Date.now(),
+                cliente_id: idCliente,
+                mes: mesIni,
+                año: anioIni,
+                monto: montoAdelanto,
+                pagado: true,
+                metodo: 'Efectivo',
+                historico: `${nombre} ${apellido} (Adelanto)`.trim(),
+                es_garantia: false,
+                fecha_pago_real: Date.now()
+            });
+
+            // Registro 2 (La Deuda): Estructura ESTRICTA auditada en Fase 3.2
+            if (deudaRestante > 0) {
+                pagos.push({
+                    id: Date.now() + 1,
+                    cliente_id: idCliente,
+                    mes: mesIni,
+                    año: anioIni,
+                    monto: deudaRestante,
+                    pagado: false,
+                    metodo: "",
+                    historico: `${nombre} ${apellido}`.trim(),
+                    es_garantia: false,
+                    fecha_vencimiento: fechaVencDeuda
+                });
+            }
+        } else if ((frecuencia === 'mensual' || frecuencia === 'quincenal') && modalidad === 'opcion3') {
+            // Meses por adelantado
+            const inputPeriodos = document.getElementById('inputPeriodosPagados');
+            const cantMeses = parseInt(inputPeriodos && inputPeriodos.value ? inputPeriodos.value : 2) || 2;
+
+            for (let i = 0; i < cantMeses; i++) {
+                let mesCobro = mesIni + i;
+                let añoCobro = anioIni;
+                while (mesCobro > 12) {
+                    mesCobro -= 12;
+                    añoCobro++;
+                }
+                pagos.push({
+                    id: Date.now() + i,
+                    cliente_id: idCliente,
+                    mes: mesCobro,
+                    año: añoCobro,
+                    monto: monto,
+                    pagado: true,
+                    metodo: 'Efectivo',
+                    historico: `${nombre} ${apellido}`.trim(),
+                    es_garantia: false,
+                    fecha_pago_real: Date.now()
+                });
+            }
+        }
+    }
+
+    // 6. Registro de Garantía en aldia_pagos (si aplica)
+    if (tieneGarantia && montoGarantia > 0) {
+        if (pagadaGarantia) {
+            pagos.push({
+                id: Date.now() + 50,
+                cliente_id: idCliente,
+                mes: mesIni,
+                año: anioIni,
+                monto: montoGarantia,
+                pagado: true,
+                metodo: 'Efectivo',
+                historico: `${nombre} (Garantía)`.trim(),
+                es_garantia: true,
+                fecha_pago_real: Date.now()
+            });
+        } else {
+            pagos.push({
+                id: Date.now() + 50,
+                cliente_id: idCliente,
+                mes: mesIni,
+                año: anioIni,
+                monto: montoGarantia,
+                pagado: false,
+                metodo: '',
+                historico: `${nombre} (Garantía)`.trim(),
+                es_garantia: true,
+                fecha_vencimiento: fechaGarantia
+            });
+        }
+    }
+
+    localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+
+    // 7. Feedback, Actualizaciones de UI y Navegación
+    if (formCliente) formCliente.reset();
+    reiniciarVistaRegistro();
+
+    if (typeof mostrarToastDeshacer === 'function') {
+        mostrarToastDeshacer("Registro guardado correctamente");
+    }
+    alert("Registro guardado correctamente");
+
+    generarDeudasDelMes();
+    renderizarDashboard();
+    renderizarEstadisticas();
+    navegar('dashboard');
+}
+window.guardarRegistroUnificado = guardarRegistroUnificado;
+window.guardarNuevoCliente = guardarRegistroUnificado;
+window.guardarNuevoEgreso = guardarRegistroUnificado;
+
+// Función para reiniciar y limpiar completamente la vista de registro
+function reiniciarVistaRegistro() {
+    const radioClienteRaiz = document.getElementById('reg-raiz-cliente');
+    if (radioClienteRaiz) {
+        radioClienteRaiz.checked = true;
+    }
+    renderizarFormularioRegistro();
+}
+window.reiniciarVistaRegistro = reiniciarVistaRegistro;
+
+function iniciarModuloRegistro() {
+    const radios = document.querySelectorAll('input[name="tipo_registro_raiz"]');
+    radios.forEach(r => {
+        r.addEventListener('change', renderizarFormularioRegistro);
+    });
+
+    const btnGuardar = document.getElementById('btnGuardarRegistroUnificado') || document.getElementById('btn-guardar-registro');
+    if (btnGuardar) {
+        btnGuardar.onclick = guardarRegistroUnificado;
+    }
+
+    renderizarFormularioRegistro();
+}
+
+
+// ==========================================
+// --- MÓDULO: GESTOR DE INVENTARIO Y OCUPACIÓN (Fase 4.0) ---
+// ==========================================
+let modalGestorInstancia = null;
+
+function abrirGestorInventario() {
+    renderizarGestorInventario();
+    const modalEl = document.getElementById('modalGestorInventario');
+    if (modalEl) {
+        if (!modalGestorInstancia) {
+            modalGestorInstancia = new bootstrap.Modal(modalEl);
+        }
+        modalGestorInstancia.show();
+    }
+}
+window.abrirGestorInventario = abrirGestorInventario;
+
+function renderizarGestorInventario() {
+    const habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    const servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    renderizarTabHabitaciones(habitaciones, clientes);
+    renderizarTabServicios(servicios, clientes);
+    renderizarTabCategorias(servicios, clientes);
+}
+window.renderizarGestorInventario = renderizarGestorInventario;
+
+function renderizarTabHabitaciones(habitaciones, clientes) {
+    const cont = document.getElementById('contenedor-gestor-habitaciones');
+    if (!cont) return;
+
+    if (habitaciones.length === 0) {
+        cont.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-bed fa-2x mb-2 opacity-50"></i>
+                <p class="mb-0 small">No hay habitaciones registradas en el inventario.</p>
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    habitaciones.forEach(h => {
+        const inquilino = clientes.find(c => c.activo === true && (c.ref === h.nombre || String(c.ref) === String(h.id)));
+        
+        let badge = '';
+        if (inquilino) {
+            badge = `<span class="badge bg-danger text-white"><i class="fas fa-user-lock me-1"></i>Ocupada por: ${inquilino.nombre}</span>`;
+        } else {
+            badge = `<span class="badge bg-success text-white"><i class="fas fa-check-circle me-1"></i>Disponible</span>`;
+        }
+
+        html += `
+        <div class="card border rounded-3 p-3 mb-2 shadow-sm bg-white">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h6 class="fw-bold mb-1 text-dark">${h.nombre}</h6>
+                    <div class="text-muted small">
+                        Precio base: <span class="fw-semibold text-dark">S/ ${parseFloat(h.precio_base || 0).toFixed(2)}</span>
+                        ${h.frecuencia_base ? `<span class="badge bg-light text-dark border ms-1">${h.frecuencia_base}</span>` : ''}
+                    </div>
+                    <div class="mt-2">
+                        ${badge}
+                    </div>
+                </div>
+                <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarHabitacionGestor(${h.id})">
+                        <i class="fas fa-edit me-1"></i>Editar
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarHabitacionGestor(${h.id})">
+                        <i class="fas fa-trash-alt me-1"></i>Eliminar
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    cont.innerHTML = html;
+}
+
+function renderizarTabServicios(servicios, clientes) {
+    const cont = document.getElementById('contenedor-gestor-servicios');
+    if (!cont) return;
+
+    if (servicios.length === 0) {
+        cont.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-chalkboard-teacher fa-2x mb-2 opacity-50"></i>
+                <p class="mb-0 small">No hay servicios o clases registrados.</p>
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    servicios.forEach(s => {
+        const inscritos = clientes.filter(c => c.activo === true && (c.ref === s.nombre || (c.ref && s.nombre && c.ref.trim() === s.nombre.trim()) || String(c.ref) === String(s.id)));
+        const cantidadInscritos = inscritos.length;
+
+        let categoriaNombre = s.tipo || s.tipo_servicio || 'Servicio';
+        if (categoriaNombre.toLowerCase() === 'academia') categoriaNombre = 'Inscripción de Alumnos';
+        else if (categoriaNombre.toLowerCase() === 'streaming') categoriaNombre = 'Streaming';
+        else if (categoriaNombre.toLowerCase() === 'otro') categoriaNombre = 'Otro servicio';
+
+        const badgeInscritos = cantidadInscritos > 0
+            ? `<span class="badge bg-primary text-white"><i class="fas fa-users me-1"></i>Inscritos: ${cantidadInscritos} personas</span>`
+            : `<span class="badge bg-secondary text-white"><i class="fas fa-user-slash me-1"></i>Inscritos: 0 personas</span>`;
+
+        html += `
+        <div class="card border rounded-3 p-3 mb-2 shadow-sm bg-white">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge bg-light text-primary border small fw-bold">${categoriaNombre}</span>
+                        <h6 class="fw-bold mb-0 text-dark">${s.nombre}</h6>
+                    </div>
+                    <div class="text-muted small">
+                        Precio: <span class="fw-semibold text-dark">S/ ${parseFloat(s.precio_base || 0).toFixed(2)}</span>
+                        ${s.frecuencia_base ? `<span class="badge bg-light text-dark border ms-1">${s.frecuencia_base}</span>` : ''}
+                    </div>
+                    <div class="mt-2">
+                        ${badgeInscritos}
+                    </div>
+                </div>
+                <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarServicioGestor(${s.id})">
+                        <i class="fas fa-edit me-1"></i>Editar
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarServicioGestor(${s.id})">
+                        <i class="fas fa-trash-alt me-1"></i>Eliminar
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    cont.innerHTML = html;
+}
+
+function renderizarTabCategorias(servicios, clientes) {
+    const cont = document.getElementById('contenedor-gestor-categorias');
+    if (!cont) return;
+
+    // Extrae un Set único de tipo_servicio desde aldia_servicios (excluyendo los nativos: alquiler, streaming, academia)
+    const nativos = ['alquiler', 'streaming', 'academia', 'otro', 'crear_nuevo', 'nuevo_global'];
+    const setCategorias = new Set();
+
+    servicios.forEach(s => {
+        const cat = s.tipo || s.tipo_servicio;
+        if (cat && !nativos.includes(cat.trim().toLowerCase())) {
+            setCategorias.add(cat.trim());
+        }
+    });
+
+    clientes.forEach(c => {
+        const cat = c.tipo_servicio;
+        if (cat && !nativos.includes(cat.trim().toLowerCase())) {
+            setCategorias.add(cat.trim());
+        }
+    });
+
+    const listaCategorias = Array.from(setCategorias);
+
+    if (listaCategorias.length === 0) {
+        cont.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-tags fa-2x mb-2 opacity-50"></i>
+                <p class="mb-0 small">No hay categorías personalizadas creadas aún.</p>
+                <p class="text-muted" style="font-size: 0.75rem;">Puedes crear nuevas líneas de negocio desde el registro seleccionando "+ Crear nueva categoría...".</p>
+            </div>`;
+        return;
+    }
+
+    let html = '';
+    listaCategorias.forEach(catNombre => {
+        html += `
+        <div class="card border rounded-3 p-3 mb-2 shadow-sm bg-white">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary-subtle text-primary p-2 rounded-circle">
+                        <i class="fas fa-tag"></i>
+                    </span>
+                    <h6 class="fw-bold mb-0 text-dark">${catNombre}</h6>
+                </div>
+                <div class="d-flex gap-1">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="editarCategoriaGestor('${catNombre.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-edit me-1"></i>Editar
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="eliminarCategoriaGestor('${catNombre.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-trash-alt me-1"></i>Eliminar
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    cont.innerHTML = html;
+}
+
+
+// ==========================================
+// --- ACCIONES GESTOR DE INVENTARIO (Fase 4.1) ---
+// ==========================================
+
+function eliminarHabitacionGestor(id) {
+    let habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    const h = habitaciones.find(item => String(item.id) === String(id));
+    if (!h) return;
+
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    const enUso = clientes.some(c => c.activo === true && (c.ref === h.nombre || (c.ref && h.nombre && c.ref.trim() === h.nombre.trim()) || String(c.ref) === String(h.id)));
+
+    if (enUso) {
+        alert("No puedes eliminar esto porque hay clientes activos usándolo.");
+        return;
+    }
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar la habitación "${h.nombre}"?`)) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    habitaciones = habitaciones.filter(item => String(item.id) !== String(id));
+    localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+
+    renderizarGestorInventario();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+}
+window.eliminarHabitacionGestor = eliminarHabitacionGestor;
+
+function editarHabitacionGestor(id) {
+    let habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    const h = habitaciones.find(item => String(item.id) === String(id));
+    if (!h) return;
+
+    const nuevoNombre = prompt("Ingresa el nuevo nombre:", h.nombre);
+    if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim() === h.nombre) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    const nombreAntiguo = h.nombre;
+    const nombreNuevo = nuevoNombre.trim();
+
+    h.nombre = nombreNuevo;
+
+    // Update en Cascada en aldia_clientes
+    clientes.forEach(c => {
+        if (c.ref === nombreAntiguo || (c.ref && c.ref.trim() === nombreAntiguo.trim())) {
+            c.ref = nombreNuevo;
+        }
+    });
+
+    // Guarda aldia_clientes, aldia_habitaciones y aldia_servicios en localStorage
+    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+    localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+
+    renderizarGestorInventario();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+    if (typeof renderizarDashboard === 'function') renderizarDashboard();
+}
+window.editarHabitacionGestor = editarHabitacionGestor;
+
+function eliminarServicioGestor(id) {
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    const s = servicios.find(item => String(item.id) === String(id));
+    if (!s) return;
+
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    const enUso = clientes.some(c => c.activo === true && (c.ref === s.nombre || (c.ref && s.nombre && c.ref.trim() === s.nombre.trim()) || String(c.ref) === String(s.id)));
+
+    if (enUso) {
+        alert("No puedes eliminar esto porque hay clientes activos usándolo.");
+        return;
+    }
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar el servicio "${s.nombre}"?`)) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    servicios = servicios.filter(item => String(item.id) !== String(id));
+    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+
+    renderizarGestorInventario();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+}
+window.eliminarServicioGestor = eliminarServicioGestor;
+
+function editarServicioGestor(id) {
+    let habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    const s = servicios.find(item => String(item.id) === String(id));
+    if (!s) return;
+
+    const nuevoNombre = prompt("Ingresa el nuevo nombre:", s.nombre);
+    if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim() === s.nombre) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    const nombreAntiguo = s.nombre;
+    const nombreNuevo = nuevoNombre.trim();
+
+    s.nombre = nombreNuevo;
+
+    // Update en Cascada en aldia_clientes
+    clientes.forEach(c => {
+        if (c.ref === nombreAntiguo || (c.ref && c.ref.trim() === nombreAntiguo.trim())) {
+            c.ref = nombreNuevo;
+        }
+    });
+
+    // Guarda aldia_clientes, aldia_habitaciones y aldia_servicios en localStorage
+    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+    localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+
+    renderizarGestorInventario();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+    if (typeof renderizarDashboard === 'function') renderizarDashboard();
+}
+window.editarServicioGestor = editarServicioGestor;
+
+function eliminarCategoriaGestor(catNombre) {
+    const clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    const enUso = clientes.some(c => c.activo === true && c.tipo_servicio && c.tipo_servicio.toLowerCase() === catNombre.toLowerCase());
+
+    if (enUso) {
+        alert("No puedes eliminar esto porque hay clientes activos usándolo.");
+        return;
+    }
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar la categoría "${catNombre}"?`)) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    servicios = servicios.filter(s => {
+        const cat = s.tipo || s.tipo_servicio;
+        return !cat || cat.toLowerCase() !== catNombre.toLowerCase();
+    });
+    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+
+    renderizarGestorInventario();
+    if (typeof cargarCategoriasPrincipales === 'function') cargarCategoriasPrincipales();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+}
+window.eliminarCategoriaGestor = eliminarCategoriaGestor;
+
+function editarCategoriaGestor(catNombre) {
+    let habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+    let servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    const nuevoNombre = prompt("Ingresa el nuevo nombre:", catNombre);
+    if (!nuevoNombre || !nuevoNombre.trim() || nuevoNombre.trim().toLowerCase() === catNombre.toLowerCase()) return;
+
+    if (typeof guardarSnapshot === 'function') guardarSnapshot();
+    const categoriaAntigua = catNombre;
+    const categoriaNueva = nuevoNombre.trim();
+
+    // 2. Recorre aldia_servicios. Si tipo_servicio === categoria_antigua, actualízalo a categoria_nueva
+    servicios.forEach(s => {
+        if (s.tipo && s.tipo.toLowerCase() === categoriaAntigua.toLowerCase()) {
+            s.tipo = categoriaNueva;
+        }
+        if (s.tipo_servicio && s.tipo_servicio.toLowerCase() === categoriaAntigua.toLowerCase()) {
+            s.tipo_servicio = categoriaNueva;
+        }
+    });
+
+    // 3. Update en Cascada: Recorre aldia_clientes. Si tipo_servicio === categoria_antigua, actualízalo a categoria_nueva
+    clientes.forEach(c => {
+        if (c.tipo_servicio && c.tipo_servicio.toLowerCase() === categoriaAntigua.toLowerCase()) {
+            c.tipo_servicio = categoriaNueva;
+        }
+    });
+
+    // Guarda aldia_clientes, aldia_habitaciones y aldia_servicios en localStorage
+    localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+    localStorage.setItem('aldia_habitaciones', JSON.stringify(habitaciones));
+    localStorage.setItem('aldia_servicios', JSON.stringify(servicios));
+
+    renderizarGestorInventario();
+    if (typeof cargarCategoriasPrincipales === 'function') cargarCategoriasPrincipales();
+    if (typeof cargarOpcionesInventario === 'function') cargarOpcionesInventario();
+    if (typeof renderizarDashboard === 'function') renderizarDashboard();
+}
+window.editarCategoriaGestor = editarCategoriaGestor;

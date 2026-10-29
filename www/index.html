@@ -91,6 +91,8 @@
         </div>
     </div>
 
+    
+
     <div class="row g-2 mb-4">
         <div class="col-6">
             <div class="card-custom p-3 h-100 d-flex flex-column justify-content-center align-items-center text-center shadow-sm">
@@ -134,125 +136,37 @@
 </div>
 
 <div class="container py-4 pantalla" id="vista-nuevo">
-    <h3 class="fw-bold mb-4">Registrar</h3>
-    
-    <ul class="nav nav-pills nav-fill mb-4 bg-white rounded-pill shadow-sm p-1" role="tablist">
-        <li class="nav-item" role="presentation">
-            <a class="nav-link active rounded-pill fw-bold" id="tab-cliente" data-bs-toggle="pill" href="#form-cliente" role="tab">Nuevo Cliente</a>
-        </li>
-        <li class="nav-item" role="presentation">
-            <a class="nav-link rounded-pill fw-bold text-danger" id="tab-egreso" data-bs-toggle="pill" href="#form-egreso" role="tab">Nuevo Egreso</a>
-        </li>
-    </ul>
+    <!-- Encabezado Nativo -->
+    <div class="mb-4">
+        <h3 class="fw-bold m-0 text-white">Nuevo registro</h3>
+        <p class="text-white-50 small mb-0">Registra una persona y configura sus cobros.</p>
+    </div>
 
-    <div class="tab-content">
-        <div class="tab-pane fade show active card-custom p-4 shadow-sm" id="form-cliente" role="tabpanel">
-            <form id="form-nuevo-cliente">
-            
-            <div class="mb-4">
-                <label class="form-label text-muted small fw-bold text-center d-block">¿Qué le estás alquilando?</label>
-                <div class="btn-group w-100 shadow-sm" role="group">
-                    <input type="radio" class="btn-check" name="tipo_servicio" id="tipo-cuarto" value="cuarto" autocomplete="off" checked onchange="toggleTipoServicio()">
-                    <label class="btn btn-outline-primary fw-bold" for="tipo-cuarto"><i class="fas fa-home me-2"></i>Cuarto</label>
+    <!-- Tarjeta Principal del Formulario -->
+    <div class="card-custom p-4 shadow-sm mb-4">
+        <!-- Conmutador Raíz -->
+        <div class="mb-4">
+            <label class="form-label text-muted small fw-bold d-block mb-2">¿Qué deseas registrar?</label>
+            <div class="btn-group w-100 shadow-sm" role="group" aria-label="¿Qué deseas registrar?">
+                <input type="radio" class="btn-check" name="tipo_registro_raiz" id="reg-raiz-cliente" value="cliente" autocomplete="off" checked>
+                <label class="btn btn-outline-primary fw-bold py-2" for="reg-raiz-cliente">
+                    <i class="fas fa-user-plus me-1"></i> Cliente y cobros
+                </label>
 
-                    <input type="radio" class="btn-check" name="tipo_servicio" id="tipo-streaming" value="streaming" autocomplete="off" onchange="toggleTipoServicio()">
-                    <label class="btn btn-outline-primary fw-bold" for="tipo-streaming"><i class="fas fa-tv me-2"></i>Streaming</label>
-                </div>
+                <input type="radio" class="btn-check" name="tipo_registro_raiz" id="reg-raiz-egreso" value="egreso" autocomplete="off">
+                <label class="btn btn-outline-danger fw-bold py-2" for="reg-raiz-egreso">
+                    <i class="fas fa-minus-circle me-1"></i> Nuevo egreso
+                </label>
             </div>
-
-            <div class="mb-3">
-                <label class="form-label text-muted small fw-bold">Nombre</label>
-                <input type="text" class="form-control" id="cli-nombre" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label text-muted small fw-bold">Apellido</label>
-                <input type="text" class="form-control" id="cli-apellido">
-            </div>
-            <div class="mb-3">
-                <label class="form-label text-muted small fw-bold">Monto Mensual (S/)</label>
-                <input type="number" step="0.01" class="form-control" id="cli-monto" required>
-            </div>
-            <div class="mb-3">
-                <label class="form-label text-muted small fw-bold">Fecha del Primer Cobro</label>
-                <input type="date" class="form-control" id="cli-fecha-inicio" required>
-            </div>
-            <div class="mb-4">
-                <label class="form-label text-muted small fw-bold" id="lbl-referencia">Referencia (Ej: Cuarto 301)</label>
-                <input type="text" class="form-control" id="cli-ref">
-            </div>
-
-            <div class="card bg-light border-0 mb-3 p-3 rounded-4" id="bloque-garantia">
-                
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="chk-tiene-garantia" onchange="toggleOpcionesGarantia()">
-                    <label class="form-check-label fw-bold text-dark" for="chk-tiene-garantia" style="font-size: 0.85rem;"><i class="fas fa-shield-alt me-2 text-primary"></i>¿Aplica Depósito de Garantía?</label>
-                </div>
-
-                <div id="opciones-garantia" class="d-none mt-3 pt-3 border-top border-secondary border-opacity-25">
-                    <div class="mb-3">
-                        <label class="form-label text-muted small fw-bold">Monto de Garantía (S/)</label>
-                        <input type="number" step="0.01" class="form-control form-control-sm" id="cli-garantia-monto" placeholder="0.00">
-                    </div>
-
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="chk-garantia-pagada" onchange="toggleFechaGarantia()">
-                        <label class="form-check-label small fw-bold text-dark" for="chk-garantia-pagada">¿Garantía ya pagada?</label>
-                    </div>
-
-                    <div id="div-fecha-garantia" class="mt-2">
-                        <label class="form-label text-muted small fw-bold">¿Cuándo cobrará la garantía?</label>
-                        <input type="date" class="form-control form-control-sm" id="cli-garantia-fecha">
-                        <div class="form-text" style="font-size: 0.65rem;">Si no la pagó hoy, indica la fecha en que aparecerá como pendiente.</div>
-                    </div>
-                </div>
-                
-            </div>
-
-            <div class="card bg-light border-0 mb-4 p-3 rounded-4">
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="chk-pago-inicial" onchange="toggleMetodoPagoInicial()">
-                        <label class="form-check-label small fw-bold text-dark" for="chk-pago-inicial">¿Ya pagó su primera cuota?</label>
-                    </div>
-                    
-                    <div id="opciones-pago-inicial" class="d-none mt-2 pt-2 border-top">
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-muted">¿Cuántas cuotas (meses) paga por adelantado?</label>
-                            <input type="number" class="form-control form-control-sm" id="cli-cuotas-adelanto" value="1" min="1" step="1">
-                        </div>
-                        
-                        <label class="form-label small fw-bold text-muted mb-2">Método de Pago:</label>
-                        <div class="d-grid gap-2">
-                            <input type="radio" class="btn-check" name="metodo_pago_inicial" id="opt-ini-1" value="Efectivo" checked>
-                            <label class="btn btn-outline-success btn-sm text-start" for="opt-ini-1"><i class="fas fa-money-bill-wave me-2"></i> Efectivo</label>
-                            <input type="radio" class="btn-check" name="metodo_pago_inicial" id="opt-ini-2" value="Yape/Plin">
-                            <label class="btn btn-outline-success btn-sm text-start" for="opt-ini-2"><i class="fas fa-mobile-alt me-2"></i> Yape / Plin</label>
-                        </div>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-success w-100 py-2 fw-bold rounded-pill shadow-sm">Guardar Cliente</button>
-            </form>
         </div>
 
-        <div class="tab-pane fade card-custom p-4 shadow-sm border border-danger border-opacity-25" id="form-egreso" role="tabpanel">
-            <form id="form-nuevo-egreso">
-                <div class="mb-3">
-                    <label class="form-label text-muted small fw-bold">Fecha del Gasto</label>
-                    <input type="date" class="form-control" id="egr-fecha" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label text-muted small fw-bold">Motivo / Descripción</label>
-                    <input type="text" class="form-control" id="egr-motivo" placeholder="Ej: Pago de luz, materiales..." required>
-                </div>
-                <div class="mb-4">
-                    <label class="form-label text-muted small fw-bold">Monto del Egreso (S/)</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-danger text-white border-danger fw-bold">S/</span>
-                        <input type="number" step="0.01" min="0.1" class="form-control border-danger" id="egr-monto" required>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-danger w-100 py-2 fw-bold rounded-pill shadow-sm"><i class="fas fa-minus-circle me-2"></i>Registrar Gasto</button>
-            </form>
-        </div>
+        <!-- Contenedor Dinámico -->
+        <div id="contenedorDinamicoRegistro" class="mb-4"></div>
+
+        <!-- Botón Final Negro: Guardar registro -->
+        <button type="button" class="btn btn-dark w-100 py-3 fw-bold rounded-pill shadow-sm" id="btnGuardarRegistroUnificado">
+            Guardar registro
+        </button>
     </div>
 </div>
 
@@ -283,6 +197,15 @@
 <div class="container py-4 pantalla" id="vista-gestion">
     <h3 class="fw-bold mb-4">Gestión</h3>
     
+    <!-- Tarjeta Gestor de Inventario y Ocupación (Fase 4.0) -->
+    <div class="card-custom p-4 border border-primary border-2 mb-4" style="background-color: #f0f7ff;">
+        <h5 class="fw-bold text-primary mb-2"><i class="fas fa-boxes me-2"></i>Inventario y Ocupación</h5>
+        <p class="text-muted small mb-3">Consulta y administra la ocupación de tus inmuebles, cupos de alumnos y servicios activos en tiempo real.</p>
+        <button type="button" class="btn btn-primary fw-bold w-100 py-2 rounded-pill shadow-sm" onclick="abrirGestorInventario()">
+            <i class="fas fa-warehouse me-2"></i>Abrir Gestor de Inventario
+        </button>
+    </div>
+
     <div class="card-custom p-4 border border-success border-2 mb-4" style="background-color: #f0fdf4;">
         <h5 class="fw-bold text-primary mb-3"><i class="fas fa-database me-2"></i>Gestión de Datos</h5>
         <div class="mb-4">
@@ -297,6 +220,10 @@
                         <input class="form-check-input" type="checkbox" id="chk-export-pagos" checked>
                         <label class="form-check-label" for="chk-export-pagos">Pagos</label>
                     </div>
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chkBackupHabitaciones" checked>
+                        <label class="form-check-label" for="chkBackupHabitaciones">Habitaciones</label>
+                    </div>
                 </div>
                 <div class="col-6">
                     <div class="form-check small text-muted">
@@ -306,6 +233,10 @@
                     <div class="form-check small text-muted">
                         <input class="form-check-input" type="checkbox" id="chk-export-apuntes" checked>
                         <label class="form-check-label" for="chk-export-apuntes">Apuntes</label>
+                    </div>
+                    <div class="form-check small text-muted">
+                        <input class="form-check-input" type="checkbox" id="chkBackupServicios" checked>
+                        <label class="form-check-label" for="chkBackupServicios">Servicios y Categorías</label>
                     </div>
                 </div>
             </div>
@@ -606,8 +537,8 @@
                             <input type="number" min="1" max="31" class="form-control bg-light border-0" id="edit-cli-dia" required>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small fw-bold text-muted">Referencia</label>
-                            <input type="text" class="form-control bg-light border-0" id="edit-cli-ref" placeholder="Ej: Cuarto 301">
+                            <label class="form-label small fw-bold text-muted">Referencia <i class="fas fa-lock ms-1 text-secondary" style="font-size: 0.75rem;" title="Campo bloqueado por integridad"></i></label>
+                            <input type="text" class="form-control text-muted" id="edit-cli-ref" placeholder="Ej: Cuarto 301" readonly disabled style="background-color: #e9ecef !important; cursor: not-allowed; border: 1px solid #ced4da;">
                         </div>
                     </div>
                     
@@ -654,6 +585,22 @@
                         <div class="text-muted" style="font-size: 0.75rem;">Elimina todas las notas y listas de apuntes.</div>
                     </div>
 
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="chkBorrarHabitaciones">
+                        <label class="form-check-label fw-bold text-dark small" for="chkBorrarHabitaciones">
+                            Catálogo de Habitaciones
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Elimina todas las habitaciones creadas y sus precios base. Ideal para reiniciar tu inventario de inmuebles.</div>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="chkBorrarServicios">
+                        <label class="form-check-label fw-bold text-dark small" for="chkBorrarServicios">
+                            Catálogo de Servicios Frecuentes
+                        </label>
+                        <div class="text-muted" style="font-size: 0.75rem;">Elimina las plantillas de cursos, streaming u otros servicios guardados para autocompletado.</div>
+                    </div>
+
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="del-chk-clientes">
                         <label class="form-check-label fw-bold text-danger small" for="del-chk-clientes">
@@ -672,6 +619,63 @@
                 <button type="button" class="btn btn-danger fw-bold btn-sm" onclick="ejecutarBorradoSelectivo()">
                     <i class="fas fa-trash-alt me-1"></i> Ejecutar Eliminación
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- Modal Gestor de Inventario y Ocupación (Fase 4.0) -->
+<div class="modal fade" id="modalGestorInventario" tabindex="-1" aria-labelledby="modalGestorInventarioLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold" id="modalGestorInventarioLabel">
+                    <i class="fas fa-warehouse me-2"></i>Gestor de Inventario y Ocupación
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <!-- Nav Tabs -->
+                <ul class="nav nav-tabs nav-fill mb-3" id="gestorInventarioTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active fw-bold small py-2" id="tab-habitaciones-btn" data-bs-toggle="tab" data-bs-target="#tab-gestor-habitaciones" type="button" role="tab" aria-controls="tab-gestor-habitaciones" aria-selected="true">
+                            <i class="fas fa-bed me-1"></i> Habitaciones
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-bold small py-2" id="tab-servicios-btn" data-bs-toggle="tab" data-bs-target="#tab-gestor-servicios" type="button" role="tab" aria-controls="tab-gestor-servicios" aria-selected="false">
+                            <i class="fas fa-chalkboard-teacher me-1"></i> Servicios y Clases
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-bold small py-2" id="tab-categorias-btn" data-bs-toggle="tab" data-bs-target="#tab-gestor-categorias" type="button" role="tab" aria-controls="tab-gestor-categorias" aria-selected="false">
+                            <i class="fas fa-tags me-1"></i> Categorías Personalizadas
+                        </button>
+                    </li>
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content" id="gestorInventarioTabContent">
+                    <!-- Tab 1: Habitaciones -->
+                    <div class="tab-pane fade show active" id="tab-gestor-habitaciones" role="tabpanel" aria-labelledby="tab-habitaciones-btn">
+                        <div id="contenedor-gestor-habitaciones"></div>
+                    </div>
+
+                    <!-- Tab 2: Servicios y Clases -->
+                    <div class="tab-pane fade" id="tab-gestor-servicios" role="tabpanel" aria-labelledby="tab-servicios-btn">
+                        <div id="contenedor-gestor-servicios"></div>
+                    </div>
+
+                    <!-- Tab 3: Categorías Personalizadas -->
+                    <div class="tab-pane fade" id="tab-gestor-categorias" role="tabpanel" aria-labelledby="tab-categorias-btn">
+                        <div id="contenedor-gestor-categorias"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm fw-bold rounded-pill px-4" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
