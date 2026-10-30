@@ -558,8 +558,11 @@
                          style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
 
-                <!-- Botón Aceptar (Oculto inicialmente) -->
-                <button class="btn btn-success fw-bold px-5 d-none" id="btn-cerrar-backup" onclick="cerrarModalBackup()">Aceptar</button>
+                <!-- Botones de Acción -->
+                <div class="d-flex justify-content-center gap-2 flex-wrap" id="contenedor-acciones-backup">
+                    <button class="btn btn-success fw-bold px-4 d-none" id="btn-cerrar-backup" onclick="cerrarModalBackup()">Aceptar</button>
+                    <button class="btn btn-outline-success fw-bold px-4 d-none" id="btn-compartir-backup" onclick="compartirUltimoBackup()"><i class="fas fa-share-alt me-2"></i>Compartir</button>
+                </div>
             </div>
         </div>
     </div>

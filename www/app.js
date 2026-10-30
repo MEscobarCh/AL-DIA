@@ -1563,7 +1563,10 @@ function exportarDatos() {
 
     // Preparar y mostrar el modal
     if (!modalCargaBackupInstancia) {
-        modalCargaBackupInstancia = new bootstrap.Modal(document.getElementById('modalCargaBackup'));
+        const modalEl = document.getElementById('modalCargaBackup');
+        if (modalEl) {
+            modalCargaBackupInstancia = new bootstrap.Modal(modalEl);
+        }
     }
     
     // Capturar elementos de la interfaz
@@ -1572,50 +1575,29 @@ function exportarDatos() {
     let titulo = document.getElementById('titulo-backup');
     let texto = document.getElementById('texto-backup');
     let btnCerrar = document.getElementById('btn-cerrar-backup');
+    let btnCompartir = document.getElementById('btn-compartir-backup');
 
-    // Reiniciar el estado visual del modal
-    barra.style.width = '0%';
-    barra.innerText = '0%';
-    barra.classList.add('progress-bar-animated'); 
-    icono.className = 'fas fa-spinner fa-spin text-success mb-3';
-    titulo.innerText = 'Preparando tu respaldo...';
-    texto.innerText = 'Empaquetando clientes, pagos y apuntes de forma segura.';
-    btnCerrar.classList.add('d-none');
+    // Estado visual inicial
+    if (barra) {
+        barra.style.width = '100%';
+        barra.innerText = '100%';
+        barra.classList.remove('progress-bar-animated'); 
+    }
+    if (icono) icono.className = 'fas fa-spinner fa-spin text-success mb-3';
+    if (titulo) titulo.innerText = 'Generando respaldo...';
+    if (texto) texto.innerText = 'Empaquetando datos y guardando en Descargas...';
+    if (btnCerrar) btnCerrar.classList.add('d-none');
+    if (btnCompartir) btnCompartir.classList.add('d-none');
 
-    modalCargaBackupInstancia.show();
+    if (modalCargaBackupInstancia) {
+        modalCargaBackupInstancia.show();
+    }
 
-    // Simular el progreso de carga
-    let progreso = 0;
-    let intervalo = setInterval(() => {
-        progreso += Math.floor(Math.random() * 15) + 10; 
-        
-        if (progreso >= 100) {
-            progreso = 100;
-            clearInterval(intervalo);
-            
-            barra.style.width = progreso + '%';
-            barra.innerText = progreso + '%';
-            barra.classList.remove('progress-bar-animated'); // Detenemos la animación de las rayas
-
-            // Esperar medio segundo, descargar y transformar la interfaz
-            setTimeout(async () => {
-                await ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes, incluirHabitaciones, incluirServicios);
-                
-                // Mostrar éxito y el botón de aceptar
-                icono.className = 'fas fa-check-circle text-success mb-3';
-                titulo.innerText = '¡Respaldo Completado!';
-                texto.innerText = 'Tu archivo se ha procesado exitosamente.';
-                btnCerrar.classList.remove('d-none');
-                
-            }, 500);
-        } else {
-            barra.style.width = progreso + '%';
-            barra.innerText = progreso + '%';
-        }
-    }, 200);
+    // Ejecución inmediata en la cadena de eventos del clic (sin setTimeout ni demoras que rompan el User Gesture)
+    ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes, incluirHabitaciones, incluirServicios);
 }
 
-// Nueva función exclusiva para cerrar el modal cuando el usuario decida
+// Función para cerrar el modal cuando el usuario decida
 function cerrarModalBackup() {
     if (modalCargaBackupInstancia) {
         modalCargaBackupInstancia.hide();
@@ -1627,77 +1609,217 @@ function cerrarModalBackup() {
     }
 }
 
-async function ejecutarDescargaReal(incluirClientes, incluirPagos, incluirEgresos, incluirApuntes, incluirHabitaciones, incluirServicios) {
+let ultimoBackupUri = null;
+let ultimoBackupNombre = "";
+
+async function ejecutarDescargaReal(incluirClientes = true, incluirPagos = true, incluirEgresos = true, incluirApuntes = true, incluirHabitaciones = true, incluirServicios = true) {
+    let barra = document.getElementById('barra-progreso-backup');
+    let icono = document.getElementById('icono-backup');
+    let titulo = document.getElementById('titulo-backup');
+    let texto = document.getElementById('texto-backup');
+    let btnCerrar = document.getElementById('btn-cerrar-backup');
+    let btnCompartir = document.getElementById('btn-compartir-backup');
+
+    ultimoBackupUri = null;
+    ultimoBackupNombre = "";
+
+    // 1. Recopilación directa de datos de localStorage
+    let datosRecopilados = {};
+
+    if (incluirClientes) {
+        datosRecopilados.clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    }
+    if (incluirPagos) {
+        datosRecopilados.pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    }
+    if (incluirEgresos) {
+        datosRecopilados.egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
+    }
+    if (incluirApuntes) {
+        datosRecopilados.apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
+    }
+    if (incluirHabitaciones) {
+        const habs = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
+        datosRecopilados.aldia_habitaciones = habs;
+        datosRecopilados.habitaciones = habs;
+    }
+    if (incluirServicios) {
+        const servs = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
+        datosRecopilados.aldia_servicios = servs;
+        datosRecopilados.servicios = servs;
+    }
+
+    // 2. Creación del contenido del archivo y nombre con fecha legible
+    const backupData = JSON.stringify(datosRecopilados, null, 2);
+    const ahora = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const fechaStr = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}_${pad(ahora.getHours())}${pad(ahora.getMinutes())}${pad(ahora.getSeconds())}`;
+    const nombreArchivo = `Backup_ALDIA_${fechaStr}.json`;
+    ultimoBackupNombre = nombreArchivo;
+
+    // 3. Detección de entorno Capacitor Nativo (Android / iOS)
+    const isCapacitorNative = Boolean(
+        typeof window !== 'undefined' &&
+        window.Capacitor &&
+        (
+            (typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
+            (typeof window.Capacitor.getPlatform === 'function' && window.Capacitor.getPlatform() !== 'web') ||
+            Boolean(window.Capacitor.Plugins?.Filesystem) ||
+            Boolean(window.Capacitor.Plugins?.Share)
+        )
+    );
+
     try {
-        let exportData = {};
-        
-        if (incluirClientes) {
-            exportData.clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
-        }
-        
-        if (incluirPagos) {
-            exportData.pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-        }
+        if (isCapacitorNative) {
+            // === RUTA NATIVA EN ANDROID CON CAPACITOR: GUARDADO DIRECTO ===
+            const Filesystem = window.Capacitor?.Plugins?.Filesystem;
+            if (!Filesystem?.writeFile && typeof window.Capacitor?.nativePromise !== 'function') {
+                throw new Error("Plugin Filesystem de Capacitor no está disponible.");
+            }
 
-        if (incluirEgresos) {
-            exportData.egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
-        }
-        
-        if (incluirApuntes) {
-            exportData.apuntes = JSON.parse(localStorage.getItem('aldia_apuntes')) || [];
-        }
-
-        // Fase 4.3: Exportación de Habitaciones y Servicios
-        if (incluirHabitaciones) {
-            exportData.aldia_habitaciones = JSON.parse(localStorage.getItem('aldia_habitaciones')) || [];
-        }
-
-        if (incluirServicios) {
-            exportData.aldia_servicios = JSON.parse(localStorage.getItem('aldia_servicios')) || [];
-        }
-
-        let dataStr = JSON.stringify(exportData, null, 2);
-        let blob = new Blob([dataStr], { type: "application/json" });
-
-        let fecha = new Date();
-        let fechaStr = `${fecha.getFullYear()}-${(fecha.getMonth()+1).toString().padStart(2,'0')}-${fecha.getDate().toString().padStart(2,'0')}`;
-        let fileName = `aldia_respaldo_${fechaStr}.json`;
-
-        // Intento prioritario: Web Share API con soporte de archivos (móviles / WebView APKs)
-        if (typeof File !== 'undefined' && typeof navigator !== 'undefined' && navigator.canShare) {
-            try {
-                let file = new File([blob], fileName, { type: "application/json" });
-                if (navigator.canShare({ files: [file] })) {
-                    await navigator.share({
-                        files: [file],
-                        title: 'Respaldo Al Día',
-                        text: 'Archivo de respaldo de Al Día'
+            const escribirArchivo = async (path, directory) => {
+                if (Filesystem?.writeFile) {
+                    return await Filesystem.writeFile({
+                        path,
+                        data: backupData,
+                        directory,
+                        encoding: 'utf8',
+                        recursive: true
                     });
-                    return; // Compartido exitosamente en la aplicación de destino
                 }
-            } catch (shareErr) {
-                if (shareErr.name === 'AbortError') {
-                    return; // El usuario canceló la hoja para compartir
+                return await window.Capacitor.nativePromise('Filesystem', 'writeFile', {
+                    path,
+                    data: backupData,
+                    directory,
+                    encoding: 'utf8',
+                    recursive: true
+                });
+            };
+
+            let writeResult = null;
+            let carpetaDestino = "Descargas";
+
+            // Prioridad 1: Guardar directamente en la carpeta Descargas (Download)
+            try {
+                writeResult = await escribirArchivo(`Download/${nombreArchivo}`, 'EXTERNAL_STORAGE');
+                carpetaDestino = "Descargas (Download)";
+            } catch (errDownload) {
+                console.warn("Intento en Download/ (EXTERNAL_STORAGE) no disponible, intentando en Documentos:", errDownload);
+                // Prioridad 2: Guardar directamente en la carpeta Documentos (Documents)
+                try {
+                    writeResult = await escribirArchivo(nombreArchivo, 'DOCUMENTS');
+                    carpetaDestino = "Documentos";
+                } catch (errDocs) {
+                    console.warn("Intento en DOCUMENTS no disponible, guardando en CACHE:", errDocs);
+                    // Prioridad 3: Guardar en CACHE
+                    writeResult = await escribirArchivo(nombreArchivo, 'CACHE');
+                    carpetaDestino = "Almacenamiento del Dispositivo";
                 }
-                console.warn("Fallo Web Share API, procediendo a descarga tradicional:", shareErr);
+            }
+
+            if (!writeResult || !writeResult.uri) {
+                throw new Error("No se obtuvo confirmación del archivo guardado.");
+            }
+
+            ultimoBackupUri = writeResult.uri;
+
+            // Éxito nativo directo
+            if (icono) icono.className = 'fas fa-check-circle text-success mb-3';
+            if (titulo) titulo.innerText = '¡Respaldo Guardado!';
+            if (texto) {
+                texto.innerHTML = `Guardado directamente en tu carpeta de <b>${carpetaDestino}</b>:<br><div class="badge bg-light text-dark border p-2 mt-2 font-monospace text-wrap">${nombreArchivo}</div>`;
+            }
+
+            // Habilitar opción de compartir opcionalmente
+            if (btnCompartir) {
+                btnCompartir.classList.remove('d-none');
+            }
+
+        } else {
+            // === RUTA WEB / ESCRITORIO (FALLBACK PARA NAVEGADOR - DESCARGA DIRECTA) ===
+            const blob = new Blob([backupData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+            if (icono) icono.className = 'fas fa-check-circle text-success mb-3';
+            if (titulo) titulo.innerText = '¡Respaldo Descargado!';
+            if (texto) {
+                texto.innerHTML = `El archivo se ha descargado directamente en tu carpeta de <b>Descargas</b>:<br><div class="badge bg-light text-dark border p-2 mt-2 font-monospace text-wrap">${nombreArchivo}</div>`;
             }
         }
 
-        // Fallback: Descarga estándar mediante enlace <a> simulado
-        let url = URL.createObjectURL(blob);
-        let linkElement = document.createElement('a');
-        linkElement.href = url;
-        linkElement.download = fileName;
-        document.body.appendChild(linkElement);
-        linkElement.click();
-        document.body.removeChild(linkElement);
-        
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-
     } catch (error) {
-        alert("❌ Error al generar el respaldo: " + error.message);
+        const errorMsg = (error && error.message) ? error.message : String(error || '');
+        console.error("Error al exportar datos:", error);
+        if (icono) icono.className = 'fas fa-exclamation-triangle text-danger mb-3';
+        if (titulo) titulo.innerText = 'Error al Generar Respaldo';
+        if (texto) texto.innerText = 'Ocurrió un error al procesar el archivo: ' + errorMsg;
+    } finally {
+        if (barra) {
+            barra.style.width = '100%';
+            barra.innerText = '100%';
+            barra.classList.remove('progress-bar-animated');
+        }
+        if (btnCerrar) {
+            btnCerrar.classList.remove('d-none');
+        }
     }
 }
+
+// Función para compartir el respaldo recién generado si el usuario lo desea
+async function compartirUltimoBackup() {
+    if (!ultimoBackupUri) {
+        alert("⚠️ No hay un archivo de respaldo reciente para compartir.");
+        return;
+    }
+
+    try {
+        const Share = window.Capacitor?.Plugins?.Share;
+        if (Share?.share) {
+            await Share.share({
+                title: 'Backup Al Día',
+                text: `Copia de seguridad de Al Día (${ultimoBackupNombre}).`,
+                dialogTitle: 'Compartir Copia de Seguridad',
+                files: [ultimoBackupUri]
+            });
+        } else if (typeof window.Capacitor?.nativePromise === 'function') {
+            await window.Capacitor.nativePromise('Share', 'share', {
+                title: 'Backup Al Día',
+                text: `Copia de seguridad de Al Día (${ultimoBackupNombre}).`,
+                dialogTitle: 'Compartir Copia de Seguridad',
+                files: [ultimoBackupUri]
+            });
+        } else {
+            alert("⚠️ La función de compartir no está disponible en este dispositivo.");
+        }
+    } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err || '');
+        if (!/cancel/i.test(msg) && err?.name !== 'AbortError') {
+            console.error("Error al compartir backup:", err);
+        }
+    }
+}
+
+// Aliases para compatibilidad directa y llamadas programáticas
+function descargarBackup() {
+    return exportarDatos();
+}
+
+function generarRespaldo() {
+    return exportarDatos();
+}
+
+window.exportarDatos = exportarDatos;
+window.descargarBackup = descargarBackup;
+window.generarRespaldo = generarRespaldo;
+window.ejecutarDescargaReal = ejecutarDescargaReal;
+window.compartirUltimoBackup = compartirUltimoBackup;
 
 function procesarImportacion(e) {
     let archivo = e.target.files[0];
