@@ -27,13 +27,10 @@
             --warning-color: #f59e0b; 
         }
 
-        body { background-color: var(--brand-blue); color: white; font-family: 'Segoe UI', sans-serif; padding-bottom: 80px; }
+        body { background-color: var(--brand-blue); color: white; font-family: 'Segoe UI', sans-serif; padding-bottom: 95px; }
         
         .card-custom { background: white; border-radius: 15px; color: var(--text-main); border: none; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .stat-card { padding: 20px; height: 100%; border-radius: 15px; }
-        
-        /* Tarjeta de Saldo Neto (Cristalizada para que destaque sobre tu fondo azul) */
-        .text-white.stat-card { background: rgba(255, 255, 255, 0.1) !important; border: 1px solid rgba(255, 255, 255, 0.2); }
 
         .text-recaudado { color: var(--success-color); font-weight: bold; font-size: 1.8rem; }
         .text-pendiente { color: var(--warning-color); font-weight: bold; font-size: 1.5rem; }
@@ -81,58 +78,88 @@
 </head>
 <body>
 
-<div class="container py-4 pantalla activa" id="vista-dashboard">
+<div class="container py-4 pb-4 pantalla activa" id="vista-dashboard">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold m-0">💰 ALDia</h2>
-        <div class="d-flex align-items-center bg-primary rounded-pill shadow-sm overflow-hidden">
-            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(-1)"><i class="fas fa-chevron-left"></i></button>
-            <div class="px-2 py-1 small fw-bold" id="mes-actual-display" style="min-width: 100px; text-align: center;">Cargando...</div>
-            <button class="btn btn-primary btn-sm border-0 px-3" onclick="cambiarMes(1)"><i class="fas fa-chevron-right"></i></button>
+        <div class="d-flex align-items-center bg-white rounded-pill shadow-sm px-1 py-0 border border-light" id="contenedorSelectorMes">
+            <button class="btn btn-sm text-primary border-0 px-2 py-1" id="btn-mes-anterior" onclick="cambiarMes(-1)" title="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+            <div class="px-2 py-1 small fw-bold text-primary text-uppercase" id="mes-actual-display" style="min-width: 120px; text-align: center; letter-spacing: 0.5px;">Cargando...</div>
+            <button class="btn btn-sm text-primary border-0 px-2 py-1" id="btn-mes-siguiente" onclick="cambiarMes(1)" title="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
         </div>
     </div>
 
-    
+    <!-- Tarjetas de Métricas (Jerarquía, Contraste y Saldo Neto w-100) -->
+    <div class="row g-2 mb-3">
+        <!-- 1. Saldo Neto (Ancho Completo w-100, Fondo Sólido Prominente) -->
+        <div class="col-12">
+            <div class="card-custom p-3 shadow text-center" onclick="navegar('estadisticas')" style="cursor: pointer;" title="Toca para ir al Historial Financiero">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted fw-bold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+                        <i class="fas fa-wallet me-1 text-primary"></i>Saldo Neto Acumulado
+                    </small>
+                    <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill small" style="font-size: 0.65rem;">
+                        Historial <i class="fas fa-arrow-right ms-1"></i>
+                    </span>
+                </div>
+                <div class="fw-bold fs-2 text-dark mt-1" id="saldo-mes">S/ 0.00</div>
+            </div>
+        </div>
 
-    <div class="row g-2 mb-4">
+        <!-- 2. Ingresos del Mes (col-6) -->
         <div class="col-6">
             <div class="card-custom p-3 h-100 d-flex flex-column justify-content-center align-items-center text-center shadow-sm">
-                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Ingresos del Mes</small>
-                <div class="text-success fw-bold mt-1" style="font-size: 1.4rem;" id="total-ingresos">S/ 0.00</div>
+                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;"><i class="fas fa-arrow-down text-success me-1"></i>Ingresos del Mes</small>
+                <div class="text-success fw-bold mt-1" style="font-size: 1.35rem;" id="total-ingresos">S/ 0.00</div>
             </div>
         </div>
+
+        <!-- 3. Egresos del Mes (col-6) -->
         <div class="col-6">
             <div class="card-custom p-3 h-100 d-flex flex-column justify-content-center align-items-center text-center shadow-sm">
-                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;">Egresos del Mes</small>
-                <div class="text-danger fw-bold mt-1" style="font-size: 1.4rem;" id="total-egresos">S/ 0.00</div>
+                <small class="text-muted fw-bold text-uppercase" style="font-size: 0.7rem;"><i class="fas fa-arrow-up text-danger me-1"></i>Egresos del Mes</small>
+                <div class="text-danger fw-bold mt-1" style="font-size: 1.35rem;" id="total-egresos">S/ 0.00</div>
             </div>
         </div>
-        <div class="col-6">
-            <div class="card-custom stat-card d-flex flex-column justify-content-center align-items-center text-center p-3 shadow-sm bg-primary text-white transition" onclick="navegar('estadisticas')">
-                <small class="text-white-50 mb-1 text-uppercase fw-bold" style="font-size: 0.75rem;">Saldo Neto</small>
-                <div class="fs-4 fw-bold" id="saldo-mes">S/ 0.00</div>
-            </div>
-        </div>
-        <div class="col-6">
-            <div class="card-custom stat-card d-flex flex-column justify-content-center align-items-center text-center p-3 shadow-sm">
-                <small class="text-muted mb-1 text-uppercase fw-bold" style="font-size: 0.75rem;">Por Cobrar</small>
-                <div class="text-warning fw-bold fs-4" id="saldo-pendiente">S/ 0.00</div>
+
+        <!-- 4. Tarjeta "Por Cobrar" y Progreso Unificados (col-12) -->
+        <div class="col-12">
+            <div class="card-custom p-3 shadow-sm mb-4" id="card-por-cobrar">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted fw-bold text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.5px;">
+                        <i class="fas fa-hand-holding-usd me-1 text-warning"></i>Por Cobrar
+                    </small>
+                    <div id="badge-estado-cobranza"></div>
+                </div>
+                <div class="fw-bold fs-3 mt-1 text-center" id="saldo-pendiente" style="color: #d97706;">S/ 0.00</div>
+
+                <!-- Barra de Progreso y Faltantes Integrados -->
+                <div class="mt-3 pt-2 border-top">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted fw-semibold" style="font-size: 0.72rem;">Progreso</small>
+                        <span class="small fw-bold text-dark" id="progreso-cobranza-texto">0 de 0 cuartos pagaron</span>
+                    </div>
+                    <div class="progress" style="height: 9px; border-radius: 6px; background-color: #e2e8f0;">
+                        <div class="progress-bar bg-success" id="progreso-cobranza-barra" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div id="lista-resumen-deudores" class="small mt-2" style="font-size: 0.78rem;"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-primary"><i class="fas fa-hand-holding-usd me-2"></i>Pendientes de Cobro</h5>
-    <div class="mb-4" id="lista-pendientes"></div>
+    <!-- Sección Condicional de Pendientes (se oculta automáticamente si no hay deudas) -->
+    <div id="seccion-pendientes" class="mb-4">
+        <h5 class="mt-3 mb-2 text-uppercase small fw-bold" id="titulo-pendientes" style="color: rgba(255, 255, 255, 0.85);">
+            <span class="text-warning"><i class="fas fa-hand-holding-usd me-1"></i></span> PENDIENTES DE COBRO
+        </h5>
+        <div id="lista-pendientes"></div>
+    </div>
 
-    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-success"><i class="fas fa-arrow-down me-2"></i>Ingresos Este Mes</h5>
+    <!-- Sección de Ingresos del Mes -->
+    <h5 class="mt-3 mb-2 text-uppercase small fw-bold" style="color: rgba(255, 255, 255, 0.85);">
+        <span class="text-success"><i class="fas fa-arrow-down me-1"></i></span> INGRESOS ESTE MES
+    </h5>
     <div class="mb-4" id="lista-pagados"></div>
-
-    <h5 class="mb-3 text-uppercase small opacity-75 fw-bold text-danger"><i class="fas fa-arrow-up me-2"></i>Egresos Este Mes</h5>
-    <div class="mb-4" id="lista-egresos"></div>
-</div>
-    <div id="seccion-proximos" class="mt-4 d-none">
-    <h5 class="mb-3 text-uppercase small opacity-75">Próximos a Cobrar (<span id="titulo-mes-proximo"></span>)</h5>
-    <div id="lista-proximos"></div>
-</div>
 </div>
 
 <div class="container py-4 pantalla" id="vista-nuevo">
@@ -188,63 +215,58 @@
 </div>
 
 <div class="container py-4 pantalla" id="vista-estadisticas">
-    <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
-        <h3 class="fw-bold mb-0">Historial Financiero</h3>
-        <div class="dropdown">
-            <button class="btn btn-success btn-sm dropdown-toggle fw-bold rounded-pill px-3 shadow-sm" type="button" id="btnDropdownExportar" data-bs-toggle="dropdown" aria-expanded="false">
-                <i class="fas fa-download me-1"></i>Descargar Reporte
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="btnDropdownExportar">
-                <li>
-                    <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('pdf')">
-                        <i class="fas fa-file-pdf text-danger me-2"></i>Exportar como PDF
-                    </button>
-                </li>
-                <li>
-                    <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('excel')">
-                        <i class="fas fa-file-excel text-success me-2"></i>Exportar como Excel
-                    </button>
-                </li>
-            </ul>
-        </div>
+    <div class="mb-3">
+        <h3 class="fw-bold mb-1">Historial Financiero</h3>
+        <p class="text-white-50 small mb-0" style="color: rgba(255,255,255,0.75) !important;">Resumen de ingresos y egresos por mes.</p>
     </div>
-    <p class="text-muted small mb-3">Resumen de ingresos y egresos por mes.</p>
     
-    <!-- Barra de Filtros Dinámicos (Corrección Crítica UI: Select Nativo) -->
-    <div class="row g-2 mb-3">
-        <div class="col-12 col-md-5">
-            <input type="month" id="filtroMesHistorial" class="form-control fw-bold shadow-sm">
-        </div>
-        <div class="col-12 col-md-7">
-            <select id="filtroTipoHistorial" class="form-select w-100">
-                <option value="ambos" selected>Mostrar Ambos</option>
-                <option value="ingresos">Solo Ingresos</option>
-                <option value="egresos">Solo Egresos</option>
-            </select>
-        </div>
-    </div>
-
     <!-- Tarjeta Blanca Principal del Historial Financiero -->
     <div class="card card-custom p-3 shadow mb-4 border-0" id="tarjeta-principal-historial">
-        <!-- Encabezado interno con icono de calendario, Mes/Año y botón de Neto -->
+        <!-- Fila de Buscador y Descarga de Reporte -->
+        <div class="d-flex gap-2 mb-3">
+            <div class="flex-grow-1">
+                <input type="text" id="buscadorHistorial" class="form-control form-control-sm" placeholder="🔍 Buscar...">
+            </div>
+            <div class="dropdown">
+                <button class="btn btn-success btn-sm dropdown-toggle fw-bold rounded-pill px-3 shadow-sm" type="button" id="btnDropdownExportar" data-bs-toggle="dropdown" aria-expanded="false" title="Descargar Reporte">
+                    <i class="fas fa-download"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="btnDropdownExportar">
+                    <li>
+                        <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('pdf')">
+                            <i class="fas fa-file-pdf text-danger me-2"></i>Exportar como PDF
+                        </button>
+                    </li>
+                    <li>
+                        <button class="dropdown-item py-2 small fw-semibold" type="button" onclick="exportarReporte('excel')">
+                            <i class="fas fa-file-excel text-success me-2"></i>Exportar como Excel
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Encabezado con selector de fecha y saldo Neto -->
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold text-primary m-0 text-uppercase" id="historial-encabezado-mes">
-                <i class="far fa-calendar-alt me-2"></i><span id="historial-nombre-mes">Cargando...</span>
-            </h6>
+            <div class="d-flex align-items-center position-relative" style="cursor: pointer;" onclick="document.getElementById('filtroMesHistorial').showPicker ? document.getElementById('filtroMesHistorial').showPicker() : document.getElementById('filtroMesHistorial').click()" title="Toca para cambiar de mes">
+                <i class="far fa-calendar-alt text-primary me-2 fs-5"></i>
+                <span id="historial-nombre-mes" class="fw-bold text-primary text-uppercase fs-6 m-0">OCTUBRE 2026</span>
+                <input type="month" id="filtroMesHistorial" class="position-absolute opacity-0" style="width: 1px; height: 1px; pointer-events: none;">
+            </div>
             <span class="badge bg-success py-2 px-3 fs-6 rounded-pill" id="badgeNetoSuperior">Neto: S/ 0.00</span>
         </div>
 
-        <!-- Fila de Tarjetas de Resumen Reubicada Adentro de la Tarjeta Blanca -->
+        <!-- Fila de Tarjetas de Resumen como Filtros Interactivos (Toggle) -->
         <div class="row text-center mb-3 g-2" id="filaResumenHistorial">
             <div class="col-6" id="colResumenIngresos">
-                <div class="card bg-success bg-opacity-10 border-success text-center p-2">
-                    <small class="text-success d-block fw-bold text-truncate" style="font-size:0.68rem;">INGRESOS</small>
+                <div class="card bg-success bg-opacity-10 border-success text-center p-2 user-select-none" id="cardResumenIngresos" onclick="toggleFiltroTransacciones('ingresos')" style="cursor: pointer; transition: all 0.25s ease;" title="Toca para filtrar solo Ingresos (o deseleccionar)">
+                    <small class="text-success d-block fw-bold text-truncate" style="font-size:0.68rem;"><i class="fas fa-arrow-down me-1"></i>INGRESOS</small>
                     <span class="text-success fw-bold" id="total-resumen-ingresos" style="font-size:0.95rem;">S/ 0.00</span>
                 </div>
             </div>
             <div class="col-6" id="colResumenEgresos">
-                <div class="card bg-danger bg-opacity-10 border-danger text-center p-2">
-                    <small class="text-danger d-block fw-bold text-truncate" style="font-size:0.68rem;">EGRESOS</small>
+                <div class="card bg-danger bg-opacity-10 border-danger text-center p-2 user-select-none" id="cardResumenEgresos" onclick="toggleFiltroTransacciones('egresos')" style="cursor: pointer; transition: all 0.25s ease;" title="Toca para filtrar solo Egresos (o deseleccionar)">
+                    <small class="text-danger d-block fw-bold text-truncate" style="font-size:0.68rem;"><i class="fas fa-arrow-up me-1"></i>EGRESOS</small>
                     <span class="text-danger fw-bold" id="total-resumen-egresos" style="font-size:0.95rem;">S/ 0.00</span>
                 </div>
             </div>
@@ -377,7 +399,13 @@
                 </div>
             </div>
             <div class="modal-footer border-0">
-                <button type="button" class="btn btn-success px-4" onclick="procesarPago()">Registrar Pago</button>
+                <div class="d-flex justify-content-between w-100 flex-wrap gap-2">
+                    <button type="button" class="btn btn-light text-muted border px-3" data-bs-dismiss="modal">Cancelar</button>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-primary px-3 fw-bold" onclick="procesarPago(false)">Registrar Pago</button>
+                        <button type="button" class="btn btn-outline-danger px-3 fw-bold" onclick="procesarPago('pdf')" title="Cobrar y generar PDF"><i class="fas fa-file-pdf me-1"></i> Cobrar y PDF</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -596,6 +624,11 @@
                         <label class="form-label small fw-bold text-muted">Monto Mensual (S/)</label>
                         <input type="number" step="0.01" min="1" class="form-control bg-light border-0 fs-5 fw-bold text-success" id="edit-cli-monto" required>
                         <small class="text-muted" style="font-size: 0.7rem;">Este cambio solo afectará a los pagos pendientes y futuros.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted"><i class="fab fa-whatsapp text-success me-1"></i> Teléfono / WhatsApp</label>
+                        <input type="tel" class="form-control bg-light border-0" id="edit-cli-telefono" placeholder="Ej: 987654321">
                     </div>
                     
                     <div class="row g-2 mb-4">

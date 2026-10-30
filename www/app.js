@@ -6,7 +6,8 @@ const añoActual = hoy.getFullYear();
 
 // Inicialización de la App
 document.addEventListener("DOMContentLoaded", () => {
-    document.getElementById('mes-actual-display').innerHTML = `<i class="fas fa-calendar-alt me-2"></i> ${meses[mesActual - 1]} ${añoActual}`;
+    const elInitMes = document.getElementById('mes-actual-display');
+    if (elInitMes) elInitMes.innerText = `${meses[mesActual - 1].toUpperCase()} ${añoActual}`;
     iniciarBaseDeDatos();
     generarDeudasDelMes();
     renderizarDashboard();
@@ -23,7 +24,7 @@ function iniciarBaseDeDatos() {
     if (!localStorage.getItem('aldia_clientes')) {
         // Cargar datos de prueba
         const clientesPrueba = [
-            { id: 1, nombre: "Juan", apellido: "García", monto: 350.00, dia: 28, activo: true, ref: "Cuarto 301" }
+            { id: 1, nombre: "Juan", apellido: "García", telefono: "", monto: 350.00, dia: 28, activo: true, ref: "Cuarto 301" }
         ];
         const pagosPrueba = [
             { id: 101, cliente_id: 1, mes: mesActual, año: añoActual, monto: 350.00, pagado: true, metodo: "Yape/Plin", historico: "Juan García" }
@@ -133,20 +134,29 @@ function renderizarDashboard() {
                     badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
                 }
 
+                // Extracción limpia de fecha
+                const fechaBase = pago.fecha_pago_real ? new Date(Number(pago.fecha_pago_real)) : new Date(Number(pago.id));
+                let fechaTexto = "";
+                if (!isNaN(fechaBase.getTime())) {
+                    let d = fechaBase.getDate().toString().padStart(2, '0');
+                    let m = (fechaBase.getMonth() + 1).toString().padStart(2, '0');
+                    fechaTexto = `${d}/${m}`;
+                }
+
                 htmlPagados += `
                 <div class="card-custom p-3 shadow-sm border-start border-4 border-success mb-2">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
+                            <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2 flex-wrap">
                                 ${cliente.nombre}
                                 ${badgeHtml}
                             </h6>
-                            <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pago.metodo || 'Efectivo'}</small>
+                            <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pago.metodo || 'Efectivo'}${fechaTexto ? ` &bull; <i class="far fa-calendar-alt me-1"></i>${fechaTexto}` : ''}</small>
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="fw-bold text-success fs-5 me-2">S/ ${parseFloat(pago.monto).toFixed(2)}</span>
                             ${botonExtraHtml}
-                            <button class="btn btn-sm btn-outline-secondary rounded-circle shadow-sm" style="width: 35px; height: 35px; padding: 0;" onclick="revertirPago(${pago.id}, '${cliente.nombre}')" title="Revertir cobro"><i class="fas fa-undo-alt"></i></button>
+                            <button class="btn btn-sm btn-outline-secondary rounded-circle shadow-sm" style="width: 35px; height: 35px; padding: 0;" onclick="revertirPago(${pago.id}, '${cliente.nombre}', ${pago.monto})" title="Revertir cobro"><i class="fas fa-undo-alt"></i></button>
                         </div>
                     </div>
                 </div>`;
@@ -167,19 +177,27 @@ function renderizarDashboard() {
 
         if (pagoGarantia) {
             totalIngresos += parseFloat(pagoGarantia.monto);
+            const fechaGarBase = pagoGarantia.fecha_pago_real ? new Date(Number(pagoGarantia.fecha_pago_real)) : new Date(Number(pagoGarantia.id));
+            let fechaGarTexto = "";
+            if (!isNaN(fechaGarBase.getTime())) {
+                let d = fechaGarBase.getDate().toString().padStart(2, '0');
+                let m = (fechaGarBase.getMonth() + 1).toString().padStart(2, '0');
+                fechaGarTexto = `${d}/${m}`;
+            }
+
             htmlPagados += `
             <div class="card-custom p-3 shadow-sm border-start border-4 border-success mb-2">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
+                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2 flex-wrap">
                             ${cliente.nombre} 
                             <span class="badge bg-success text-white rounded-pill px-2 py-1" style="font-size: 0.65rem;"><i class="fas fa-shield-alt me-1"></i>Garantía</span>
                         </h6>
-                        <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pagoGarantia.metodo}</small>
+                        <small class="text-muted"><i class="fas fa-wallet me-1"></i> ${pagoGarantia.metodo}${fechaGarTexto ? ` &bull; <i class="far fa-calendar-alt me-1"></i>${fechaGarTexto}` : ''}</small>
                     </div>
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="fw-bold text-success fs-5">S/ ${parseFloat(pagoGarantia.monto).toFixed(2)}</span>
-                        <button class="btn btn-sm btn-outline-secondary rounded-circle shadow-sm" style="width: 35px; height: 35px; padding: 0;" onclick="revertirPago(${pagoGarantia.id}, '${cliente.nombre} (Garantía)')" title="Revertir cobro"><i class="fas fa-undo-alt"></i></button>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="fw-bold text-success fs-5 me-2">S/ ${parseFloat(pagoGarantia.monto).toFixed(2)}</span>
+                        <button class="btn btn-sm btn-outline-secondary rounded-circle shadow-sm" style="width: 35px; height: 35px; padding: 0;" onclick="revertirPago(${pagoGarantia.id}, '${cliente.nombre} (Garantía)', ${pagoGarantia.monto})" title="Revertir cobro"><i class="fas fa-undo-alt"></i></button>
                     </div>
                 </div>
             </div>`;
@@ -200,10 +218,16 @@ function renderizarDashboard() {
         }
     });
 
-    // Ordenar deudas pendientes de forma totalmente independiente:
-    // Mayor atraso primero, y fechas futuras al final por más próximo a vencer
+    // Prioridad a Morosos en la Lista:
+    // Inyectar primero a quienes arrastran deudas anteriores y a quienes tienen mayor atraso
     let hoyCero = new Date(fechaHoy.getFullYear(), fechaHoy.getMonth(), fechaHoy.getDate());
     listaPendientes.sort((a, b) => {
+        let deudasPastA = pagos.filter(p => p.cliente_id === a.cliente.id && !p.pagado && !p.es_garantia && (p.año < añoVisualizado || (p.año === añoVisualizado && p.mes < mesVisualizado))).length;
+        let deudasPastB = pagos.filter(p => p.cliente_id === b.cliente.id && !p.pagado && !p.es_garantia && (p.año < añoVisualizado || (p.año === añoVisualizado && p.mes < mesVisualizado))).length;
+        if (deudasPastA !== deudasPastB) {
+            return deudasPastB - deudasPastA; // Quienes arrastran más meses primero
+        }
+
         let fechaA;
         if (a.tipo === 'garantia' && (a.cliente.garantia_fecha || a.cliente.fecha)) {
             let [anioA, mesA, diaA] = (a.cliente.garantia_fecha || a.cliente.fecha).split('-').map(Number);
@@ -222,10 +246,10 @@ function renderizarDashboard() {
 
         let atrasoA = Math.round((hoyCero - fechaA) / (1000 * 60 * 60 * 24));
         let atrasoB = Math.round((hoyCero - fechaB) / (1000 * 60 * 60 * 24));
-        return atrasoB - atrasoA;
+        return atrasoB - atrasoA; // Mayor atraso primero
     });
 
-    // Renderizado independiente de cuotas y garantías
+    // Renderizado con tarjetas destacadas y botón primario 'Registrar pago'
     listaPendientes.forEach(item => {
         let cliente = item.cliente;
 
@@ -235,7 +259,7 @@ function renderizarDashboard() {
 
             if (cliente.tipo_servicio === 'streaming') {
                 badgeHtml = `<span class="badge bg-dark text-white rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-tv me-1"></i>${cliente.ref || 'Streaming'}</span>`;
-                botonExtraHtml = `<button class="btn btn-info rounded-circle shadow-sm text-white me-2" style="width: 35px; height: 35px; padding: 0;" onclick="sumarDiasStreaming(${cliente.id}, '${cliente.nombre}')" title="Añadir días extra"><i class="fas fa-hourglass-half"></i></button>`;
+                botonExtraHtml = `<button class="btn btn-info btn-sm rounded-circle shadow-sm text-white" style="width: 32px; height: 32px; padding: 0;" onclick="sumarDiasStreaming(${cliente.id}, '${cliente.nombre}')" title="Añadir días extra"><i class="fas fa-hourglass-half" style="font-size: 0.75rem;"></i></button>`;
             } else {
                 badgeHtml = `<span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fas fa-home me-1"></i>${cliente.ref || 'Sin ref'}</span>`;
             }
@@ -245,67 +269,72 @@ function renderizarDashboard() {
             saldoPendiente += parseFloat(montoDeuda);
 
             let diaCobro = cliente.dia;
-            let textoFecha = `Cuota del ${diaCobro} de ${meses[mesVisualizado - 1]}`;
             let textoDias = "";
-            let claseColor = "text-muted"; 
-            let botonCobroHtml = "";
+            let badgeEstadoDias = "";
             let alertaMora = "";
 
             // ALERTA: ¿Arrastra deudas anteriores?
             let deudasPasadas = pagos.filter(p => p.cliente_id === cliente.id && p.pagado === false && !p.es_garantia && (p.año < añoVisualizado || (p.año === añoVisualizado && p.mes < mesVisualizado)));
             if (deudasPasadas.length > 0) {
-                alertaMora = `<span class="d-block text-danger fw-bold mt-1" style="font-size: 0.75rem;"><i class="fas fa-exclamation-triangle"></i> Arrastra ${deudasPasadas.length} mes(es) sin pagar</span>`;
+                alertaMora = `<div class="text-danger fw-bold mt-2 small d-flex align-items-center gap-1" style="font-size: 0.72rem;"><i class="fas fa-exclamation-triangle"></i> Arrastra ${deudasPasadas.length} mes(es) sin pagar</div>`;
             }
 
-            // LÓGICA DE TIEMPOS
+            // LÓGICA DE TIEMPOS Y BADGES
             if (esMesFuturo) {
-                textoDias = `, Proxima Cuota`;
-                claseColor = "text-primary fw-bold";
-                botonCobroHtml = `<i class="fas fa-lock text-muted opacity-50 fs-4" title="Mes bloqueado"></i>`;
+                textoDias = "Próx. cuota";
+                badgeEstadoDias = `<span class="badge bg-light text-muted border rounded-pill mt-1" style="font-size: 0.68rem;"><i class="far fa-calendar-alt me-1"></i>${textoDias}</span>`;
             } else {
                 if (esMesPasado) {
-                    textoDias = `, ¡Atrasado!`;
-                    claseColor = "text-danger fw-bold";
+                    textoDias = "¡Atrasado!";
+                    badgeEstadoDias = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;"><i class="fas fa-clock me-1"></i>${textoDias}</span>`;
                 } else if (diaCobro > diaHoy) {
                     let faltan = diaCobro - diaHoy;
-                    textoDias = `, faltan ${faltan} día${faltan > 1 ? 's' : ''}`;
+                    textoDias = `faltan ${faltan} d`;
+                    badgeEstadoDias = `<span class="badge bg-light text-muted border rounded-pill mt-1" style="font-size: 0.68rem;"><i class="far fa-calendar-alt me-1"></i>${textoDias}</span>`;
                 } else if (diaCobro === diaHoy) {
-                    textoDias = `, ¡Vence hoy!`;
-                    claseColor = "text-warning fw-bold";
+                    textoDias = "¡Vence hoy!";
+                    badgeEstadoDias = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;"><i class="fas fa-exclamation-circle me-1"></i>${textoDias}</span>`;
                 } else {
                     let atraso = diaHoy - diaCobro;
-                    textoDias = `, atrasado por ${atraso} día${atraso > 1 ? 's' : ''}`;
-                    claseColor = "text-danger fw-bold";
-                }
-                
-                if (pago) {
-                    botonCobroHtml = `<button class="btn btn-success rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModal(${pago.id}, '${cliente.nombre}', ${montoDeuda})"><i class="fas fa-check"></i></button>`;
+                    textoDias = `atrasado ${atraso} d`;
+                    badgeEstadoDias = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;"><i class="fas fa-clock me-1"></i>${textoDias}</span>`;
                 }
             }
 
-            // --- SECCIÓN: PENDIENTES (Con el lápiz de edición inyectado aquí) ---
+            let pagoIdTarget = pago ? pago.id : `'CREAR_' + cliente.id + '_' + mesVisualizado + '_' + añoVisualizado`;
+            let claseBorde = deudasPasadas.length > 0 ? "border-start border-danger border-4" : "border-start border-warning border-4";
+            let estiloBordeFondo = deudasPasadas.length > 0
+                ? "border-left: 4px solid #ef4444 !important; background: #fffbfb;"
+                : "border-left: 4px solid #f59e0b !important; background: #fffdf9;";
+
+            // Tarjeta destacada con borde de alerta y botón primario 'Registrar pago'
             htmlPendientes += `
-            <div class="card-custom p-3 shadow-sm border-start border-4 border-warning mb-3">
+            <div class="card-custom p-3 shadow-sm ${claseBorde} mb-3" style="${estiloBordeFondo}">
                 <div class="d-flex justify-content-between align-items-center">
-                    <!-- Lado Izquierdo: Flexible (flex-grow-1 y min-width: 0 para que no empuje) -->
-                    <div class="flex-grow-1" style="min-width: 0; padding-right: 10px;">
+                    <!-- Lado Izquierdo: Nombre, Badges y Botón de Acción Directo -->
+                    <div class="flex-grow-1" style="min-width: 0; padding-right: 12px;">
                         <h6 class="mb-1 fw-bold text-dark d-flex align-items-center flex-wrap gap-2">
                             <span class="text-truncate" style="max-width: 100%;">${cliente.nombre}</span> 
                             ${badgeHtml}
                             <div class="d-inline-flex flex-nowrap">
-                                <button class="btn btn-sm btn-link text-primary p-0" onclick="abrirModalEditarCliente(${cliente.id})" title="Editar"><i class="fas fa-edit fs-5"></i></button>
-                                <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="eliminarCliente(${cliente.id}, '${cliente.nombre}')" title="Dar de baja"><i class="fas fa-times-circle fs-5"></i></button>
+                                <button class="btn btn-sm btn-link text-primary p-0" onclick="abrirModalEditarCliente(${cliente.id})" title="Editar"><i class="fas fa-edit fs-6"></i></button>
+                                <button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="eliminarCliente(${cliente.id}, '${cliente.nombre}')" title="Dar de baja"><i class="fas fa-times-circle fs-6"></i></button>
                             </div>
                         </h6>
-                        <small class="${claseColor} d-block text-wrap" style="font-size: 0.75rem;">${textoFecha}${textoDias}</small>
+                        <!-- Botón de Acción Primario 'Registrar pago' reemplazando la fecha -->
+                        <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                            <button class="btn btn-primary btn-sm rounded-pill fw-bold px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="abrirModal(${pagoIdTarget}, '${cliente.nombre}', ${montoDeuda})" title="Registrar pago">
+                                <i class="fas fa-hand-holding-usd"></i> Registrar pago
+                            </button>
+                            ${botonExtraHtml}
+                        </div>
                         ${alertaMora}
                     </div>
                     
-                    <!-- Lado Derecho: Intocable (flex-shrink-0 para que NUNCA se encoja) -->
-                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <!-- Lado Derecho: Monto y Badge de Atraso -->
+                    <div class="d-flex flex-column align-items-end justify-content-center flex-shrink-0">
                         <span class="fw-bold text-dark fs-5">S/ ${parseFloat(montoDeuda).toFixed(2)}</span>
-                        ${botonExtraHtml}
-                        ${botonCobroHtml}
+                        ${badgeEstadoDias}
                     </div>
                 </div>
             </div>`;
@@ -313,72 +342,49 @@ function renderizarDashboard() {
             let [anioGar, mesGar, diaGar] = cliente.garantia_fecha.split('-').map(Number);
             saldoPendiente += parseFloat(cliente.garantia_monto);
             
-            let textoFechaGar = `Garantía para el ${diaGar} de ${meses[mesGar - 1]}`;
-            let claseColorGar = "text-muted";
-            let botonCobroGar = "";
-            
+            let badgeEstadoGar = "";
             if (añoVisualizado === anioGar && mesVisualizado === mesGar) {
                 if (diaGar > diaHoy && esMesActualReal) {
-                    let faltan = diaGar - diaHoy;
-                    textoFechaGar += `, faltan ${faltan} días`;
+                    badgeEstadoGar = `<span class="badge bg-light text-muted border rounded-pill mt-1" style="font-size: 0.68rem;">faltan ${diaGar - diaHoy} d</span>`;
                 } else if (diaGar === diaHoy && esMesActualReal) {
-                    textoFechaGar += `, ¡Vence hoy!`;
-                    claseColorGar = "text-warning fw-bold";
+                    badgeEstadoGar = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;">¡Vence hoy!</span>`;
                 } else if (diaGar < diaHoy && esMesActualReal) {
-                    let atraso = diaHoy - diaGar;
-                    textoFechaGar += `, atrasada por ${atraso} días`;
-                    claseColorGar = "text-danger fw-bold";
+                    badgeEstadoGar = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;">atrasada</span>`;
                 }
             } else {
-                textoFechaGar += `, ¡Atrasada!`;
-                claseColorGar = "text-danger fw-bold";
-            }
-            
-            if (!esMesFuturo) {
-                botonCobroGar = `<button class="btn btn-primary rounded-circle shadow-sm" style="width: 40px; height: 40px;" onclick="abrirModalGarantia(${cliente.id}, '${cliente.nombre}', ${cliente.garantia_monto})"><i class="fas fa-shield-alt"></i></button>`;
-            } else {
-                botonCobroGar = `<i class="fas fa-lock text-muted opacity-50 fs-4"></i>`;
+                badgeEstadoGar = `<span class="badge rounded-pill mt-1" style="font-size: 0.68rem; background-color: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;">¡Atrasada!</span>`;
             }
 
             htmlPendientes += `
-            <div class="card-custom p-3 shadow-sm border-start border-4 border-primary mb-3">
+            <div class="card-custom p-3 shadow-sm mb-3" style="border-left: 4px solid #1a3a8a !important; background: #f8fafc;">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2">
-                            ${cliente.nombre} 
+                    <div class="flex-grow-1" style="min-width: 0; padding-right: 12px;">
+                        <h6 class="mb-1 fw-bold text-dark d-flex align-items-center gap-2 flex-wrap">
+                            <span class="text-truncate">${cliente.nombre}</span> 
                             <span class="badge bg-primary text-white rounded-pill px-2 py-1" style="font-size: 0.65rem;"><i class="fas fa-shield-alt me-1"></i>Garantía</span>
                         </h6>
-                        <small class="${claseColorGar} d-block" style="font-size: 0.75rem;">${textoFechaGar}</small>
+                        <div class="d-flex align-items-center gap-2 mt-2">
+                            <button class="btn btn-primary btn-sm rounded-pill fw-bold px-3 py-1 shadow-sm d-inline-flex align-items-center gap-1" onclick="abrirModalGarantia(${cliente.id}, '${cliente.nombre}', ${cliente.garantia_monto})" title="Registrar garantía">
+                                <i class="fas fa-shield-alt"></i> Registrar garantía
+                            </button>
+                        </div>
                     </div>
-                    <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex flex-column align-items-end justify-content-center flex-shrink-0">
                         <span class="fw-bold text-dark fs-5">S/ ${parseFloat(cliente.garantia_monto).toFixed(2)}</span>
-                        ${botonCobroGar}
+                        ${badgeEstadoGar}
                     </div>
                 </div>
             </div>`;
         }
     });
 
-    // 2. PROCESAR EGRESOS DEL MES VISUALIZADO
+    // 2. PROCESAR EGRESOS DEL MES VISUALIZADO (Suma para métricas sin lista redundante)
     let egresosDelMes = egresos.filter(e => e.mes === mesVisualizado && e.año === añoVisualizado);
     egresosDelMes.forEach(egreso => {
         totalEgresos += parseFloat(egreso.monto);
-        htmlEgresos += `
-        <div class="card-custom p-3 shadow-sm border-start border-4 border-danger mb-2">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="mb-1 fw-bold text-dark">${egreso.motivo}</h6>
-                    <small class="text-muted"><i class="far fa-calendar-alt me-1"></i> Día ${egreso.dia}</small>
-                </div>
-                <div class="d-flex align-items-center gap-3">
-                    <span class="fw-bold text-danger fs-5">- S/ ${parseFloat(egreso.monto).toFixed(2)}</span>
-                    <button class="btn btn-sm btn-outline-danger rounded-circle shadow-sm" style="width: 35px; height: 35px; padding: 0;" onclick="eliminarEgreso(${egreso.id})"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>
-        </div>`;
     });
 
-    // 3. ACTUALIZAR INTERFAZ
+    // 3. ACTUALIZAR INTERFAZ Y KPIs
     document.getElementById('total-ingresos').innerText = `S/ ${totalIngresos.toFixed(2)}`;
     document.getElementById('total-egresos').innerText = `S/ ${totalEgresos.toFixed(2)}`;
     
@@ -388,16 +394,145 @@ function renderizarDashboard() {
     let saldoGlobalAcumulado = ingresosGlobales - egresosGlobales;
     
     document.getElementById('saldo-mes').innerText = `S/ ${saldoGlobalAcumulado.toFixed(2)}`;
-    document.getElementById('saldo-pendiente').innerText = `S/ ${saldoPendiente.toFixed(2)}`;
 
-    if (htmlPendientes === "") htmlPendientes = '<div class="text-center text-white my-3 fw-bold"><p>¡Todos al día!</p></div>';
-    if (htmlPagados === "") htmlPagados = '<div class="text-center text-white-50 my-3"><small>Aún no hay ingresos este mes.</small></div>';
-    if (htmlEgresos === "") htmlEgresos = '<div class="text-center text-white-50 my-3"><small>No hay egresos registrados.</small></div>';
+    // LÓGICA DE TARJETA POR COBRAR Y PROGRESO FUSIONADOS
+    const elSaldoPendiente = document.getElementById('saldo-pendiente');
+    const elBadgeEstadoCobranza = document.getElementById('badge-estado-cobranza');
+    const elListaResumenDeudores = document.getElementById('lista-resumen-deudores');
+    const elProgresoTexto = document.getElementById('progreso-cobranza-texto');
+    const elProgresoBarra = document.getElementById('progreso-cobranza-barra');
 
-    document.getElementById('lista-pendientes').innerHTML = htmlPendientes;
-    document.getElementById('lista-pagados').innerHTML = htmlPagados;
-    document.getElementById('lista-egresos').innerHTML = htmlEgresos;
-    document.getElementById('mes-actual-display').innerText = `${meses[mesVisualizado - 1]} ${añoVisualizado}`;
+    // Ratio de Cobranza del Mes
+    let totalClientesMes = 0;
+    let clientesAlDiaMes = 0;
+
+    clientes.forEach(cliente => {
+        if (!cliente.activo) return;
+        let tocaCobrar = true;
+        if (cliente.fecha_inicio) {
+            let [anioIni, mesIni] = cliente.fecha_inicio.split('-').map(Number);
+            tocaCobrar = (añoVisualizado > anioIni) || (añoVisualizado === anioIni && mesVisualizado >= mesIni);
+        }
+        if (tocaCobrar) {
+            totalClientesMes++;
+            let pagoCobrado = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia && p.pagado);
+            let pagoPendiente = pagos.find(p => p.cliente_id === cliente.id && p.mes === mesVisualizado && p.año === añoVisualizado && !p.es_garantia && !p.pagado);
+            if (pagoCobrado && !pagoPendiente) {
+                clientesAlDiaMes++;
+            }
+        }
+    });
+
+    let porcentajeCobranza = totalClientesMes > 0 ? Math.round((clientesAlDiaMes / totalClientesMes) * 100) : 100;
+
+    if (elSaldoPendiente) {
+        if (saldoPendiente <= 0) {
+            elSaldoPendiente.innerText = "S/ 0.00";
+            elSaldoPendiente.className = "fw-bold fs-3 mt-1 text-center text-secondary";
+            elSaldoPendiente.style.color = "";
+            if (elBadgeEstadoCobranza) {
+                elBadgeEstadoCobranza.innerHTML = `<span class="badge bg-success rounded-pill px-2 py-1"><i class="fas fa-check-circle me-1"></i>Todos al día</span>`;
+            }
+            if (elListaResumenDeudores) {
+                elListaResumenDeudores.innerHTML = "";
+            }
+            if (elProgresoBarra) {
+                elProgresoBarra.style.width = "100%";
+                elProgresoBarra.className = "progress-bar bg-success";
+            }
+        } else {
+            elSaldoPendiente.innerText = `S/ ${saldoPendiente.toFixed(2)}`;
+            elSaldoPendiente.className = "fw-bold fs-3 mt-1 text-center";
+            elSaldoPendiente.style.color = "#d97706";
+
+            let deudoresNombres = [];
+            listaPendientes.forEach(item => {
+                let nom = item.cliente.nombre + (item.cliente.ref ? ` (${item.cliente.ref})` : '');
+                if (!deudoresNombres.includes(nom)) {
+                    deudoresNombres.push(nom);
+                }
+            });
+
+            if (elBadgeEstadoCobranza) {
+                elBadgeEstadoCobranza.innerHTML = `<span class="badge rounded-pill px-2 py-1" style="background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;"><i class="fas fa-exclamation-circle me-1"></i>${deudoresNombres.length} pendiente${deudoresNombres.length > 1 ? 's' : ''}</span>`;
+            }
+
+            if (elListaResumenDeudores) {
+                elListaResumenDeudores.innerHTML = `<small class="d-block mt-2 text-muted fw-semibold" style="font-size: 0.78rem;"><strong class="text-dark">Falta:</strong> ${deudoresNombres.join(', ')}</small>`;
+            }
+
+            if (elProgresoBarra) {
+                elProgresoBarra.style.width = `${porcentajeCobranza}%`;
+                elProgresoBarra.className = "progress-bar bg-warning";
+            }
+        }
+    }
+
+    if (elProgresoTexto) {
+        let unidad = totalClientesMes === 1 ? 'cuarto' : 'cuartos';
+        elProgresoTexto.innerText = `${clientesAlDiaMes} de ${totalClientesMes} ${unidad} pagaron`;
+    }
+
+    // Renderizado Condicional de la Sección de Pendientes
+    const secPendientes = document.getElementById('seccion-pendientes');
+    const elListaPendientes = document.getElementById('lista-pendientes');
+    const elTituloPendientes = document.getElementById('titulo-pendientes');
+
+    if (listaPendientes.length > 0) {
+        if (secPendientes) {
+            secPendientes.classList.remove('d-none');
+            secPendientes.style.display = 'block';
+            secPendientes.className = 'mb-4';
+        }
+        if (elTituloPendientes) {
+            elTituloPendientes.innerHTML = `<span class="text-warning"><i class="fas fa-hand-holding-usd me-1"></i></span> PENDIENTES DE COBRO (${listaPendientes.length})`;
+            elTituloPendientes.style.color = "rgba(255, 255, 255, 0.85)";
+        }
+        if (elListaPendientes) {
+            elListaPendientes.innerHTML = htmlPendientes;
+        }
+    } else {
+        if (secPendientes) {
+            secPendientes.classList.add('d-none');
+            secPendientes.style.display = 'none';
+        }
+        if (elListaPendientes) {
+            elListaPendientes.innerHTML = "";
+        }
+    }
+
+    if (htmlPagados === "") htmlPagados = '<div class="text-center text-white-50 my-3 small"><i class="fas fa-info-circle me-1"></i>Aún no hay ingresos este mes.</div>';
+    const elListaPagados = document.getElementById('lista-pagados');
+    if (elListaPagados) {
+        elListaPagados.innerHTML = htmlPagados;
+    }
+    let elListaEgresos = document.getElementById('lista-egresos');
+    if (elListaEgresos) elListaEgresos.innerHTML = "";
+
+    // Formatear mes en mayúsculas estricto ("OCTUBRE 2026")
+    let nombreMesEspanol = (typeof meses !== 'undefined' && meses[mesVisualizado - 1]) 
+        ? meses[mesVisualizado - 1].toUpperCase() 
+        : `MES ${mesVisualizado}`;
+    let textoMesDisplay = `${nombreMesEspanol} ${añoVisualizado}`;
+    const elMesDisplay = document.getElementById('mes-actual-display');
+    if (elMesDisplay) {
+        elMesDisplay.innerText = textoMesDisplay;
+    }
+
+    // Bloqueo de mes futuro en la flecha de navegación
+    const btnMesSiguiente = document.getElementById('btn-mes-siguiente');
+    let esMesActualOSuperior = (añoVisualizado > añoActual) || (añoVisualizado === añoActual && mesVisualizado >= mesActual);
+    if (btnMesSiguiente) {
+        if (esMesActualOSuperior) {
+            btnMesSiguiente.disabled = true;
+            btnMesSiguiente.style.visibility = 'hidden';
+            btnMesSiguiente.setAttribute('aria-hidden', 'true');
+        } else {
+            btnMesSiguiente.disabled = false;
+            btnMesSiguiente.style.visibility = 'visible';
+            btnMesSiguiente.removeAttribute('aria-hidden');
+        }
+    }
 }
 
 // --- ACCIONES PRINCIPALES ---
@@ -417,9 +552,12 @@ function abrirModalGarantia(clienteId, nombre, monto) {
     modalInstancia.show();
 }
 
-function procesarPago() {
+function procesarPago(accionPosterior = false) {
     let pagoIdVal = document.getElementById('pago-id-actual').value;
     let metodo = document.querySelector('input[name="metodo_pago"]:checked').value;
+    let pagoGeneradoOActualizadoId = null;
+    let timestampExacto = new Date().toLocaleString('es-PE');
+    let codigoRecibo = "REC-" + Date.now().toString().slice(-6);
     
     // Si el valor empieza con GARANTIA_
     if (String(pagoIdVal).startsWith("GARANTIA_")) {
@@ -432,8 +570,9 @@ function procesarPago() {
             localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
             
             let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+            let nuevoPagoId = Date.now();
             pagos.push({
-                id: Date.now(),
+                id: nuevoPagoId,
                 fecha_pago_real: Date.now(),
                 cliente_id: cliente.id,
                 mes: mesActual,
@@ -442,9 +581,39 @@ function procesarPago() {
                 pagado: true,
                 metodo: metodo,
                 historico: `${cliente.nombre} (Garantía)`.trim(),
-                es_garantia: true
+                es_garantia: true,
+                id_recibo: codigoRecibo,
+                fecha_emision: timestampExacto
             });
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            pagoGeneradoOActualizadoId = nuevoPagoId;
+        }
+    } else if (String(pagoIdVal).startsWith("CREAR_")) {
+        // Registro dinámico desde botón de lista pendiente
+        let partes = String(pagoIdVal).split("_");
+        let cliId = parseInt(partes[1]);
+        let m = parseInt(partes[2]) || mesVisualizado;
+        let y = parseInt(partes[3]) || añoVisualizado;
+        let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+        let cliente = clientes.find(c => c.id === cliId);
+        if (cliente) {
+            let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+            let nuevoPagoId = Date.now();
+            pagos.push({
+                id: nuevoPagoId,
+                cliente_id: cliId,
+                mes: m,
+                año: y,
+                monto: cliente.monto,
+                pagado: true,
+                metodo: metodo,
+                fecha_pago_real: Date.now(),
+                historico: `${cliente.nombre} ${cliente.apellido || ''}`.trim(),
+                id_recibo: codigoRecibo,
+                fecha_emision: timestampExacto
+            });
+            localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            pagoGeneradoOActualizadoId = nuevoPagoId;
         }
     } else {
         // Es un pago mensual normal
@@ -455,20 +624,539 @@ function procesarPago() {
             pagos[index].pagado = true;
             pagos[index].metodo = metodo;
             pagos[index].fecha_pago_real = Date.now();
+            pagos[index].id_recibo = pagos[index].id_recibo || codigoRecibo;
+            pagos[index].fecha_emision = pagos[index].fecha_emision || timestampExacto;
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+            pagoGeneradoOActualizadoId = pagoId;
         }
     }
     
     modalInstancia.hide();
     renderizarDashboard();
+
+    if (pagoGeneradoOActualizadoId && accionPosterior === 'pdf') {
+        generarReciboPDF(pagoGeneradoOActualizadoId);
+    }
 }
 
+// --- V3: ENVIAR COMPROBANTE POR WHATSAPP (Opción A: Texto Formateado) ---
+function abrirEnlaceWhatsApp(url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+    }, 200);
+}
+
+function enviarComprobanteWhatsApp(pagoId) {
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    
+    let pago = pagos.find(p => p.id === pagoId);
+    if (!pago) {
+        alert("No se encontró la información del pago.");
+        return;
+    }
+
+    let cliente = clientes.find(c => c.id === pago.cliente_id);
+    let nombreCliente = cliente 
+        ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() 
+        : (pago.historico || 'Inquilino');
+    let refCliente = (cliente && cliente.ref) ? cliente.ref : (pago.es_garantia ? 'Garantía' : 'Alquiler');
+
+    let concepto = "";
+    if (pago.es_garantia) {
+        concepto = "Depósito de Garantía";
+    } else if (cliente && cliente.tipo_servicio && cliente.tipo_servicio !== 'alquiler') {
+        let nombreServ = cliente.tipo_servicio.charAt(0).toUpperCase() + cliente.tipo_servicio.slice(1);
+        let mesTexto = (typeof meses !== 'undefined' && meses[pago.mes - 1]) ? meses[pago.mes - 1] : `Mes ${pago.mes}`;
+        concepto = `${nombreServ} - ${mesTexto} ${pago.año}`;
+    } else {
+        let mesTexto = (typeof meses !== 'undefined' && meses[pago.mes - 1]) ? meses[pago.mes - 1] : `Mes ${pago.mes}`;
+        concepto = `Alquiler - ${mesTexto} ${pago.año}`;
+    }
+
+    let fechaPago = pago.fecha_pago_real ? new Date(Number(pago.fecha_pago_real)) : new Date(Number(pago.id));
+    if (isNaN(fechaPago.getTime())) fechaPago = new Date();
+    let pad = n => String(n).padStart(2, '0');
+    let dia = pad(fechaPago.getDate());
+    let mes = pad(fechaPago.getMonth() + 1);
+    let anio = fechaPago.getFullYear();
+    let horas = fechaPago.getHours();
+    let minutos = pad(fechaPago.getMinutes());
+    let ampm = horas >= 12 ? 'PM' : 'AM';
+    let horas12 = horas % 12 || 12;
+    let fechaHoraStr = `${dia}/${mes}/${anio} - ${horas12}:${minutos} ${ampm}`;
+
+    let nroRecibo = pago.id_recibo;
+    if (!nroRecibo) {
+        nroRecibo = "REC-" + String(pago.id).slice(-6);
+        pago.id_recibo = nroRecibo;
+        let pIdx = pagos.findIndex(p => Number(p.id) === Number(pagoId));
+        if (pIdx !== -1) {
+            pagos[pIdx].id_recibo = nroRecibo;
+            if (!pagos[pIdx].fecha_emision) {
+                pagos[pIdx].fecha_emision = fechaPago.toLocaleString('es-PE');
+            }
+            localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+        }
+    }
+
+    let mensaje = 
+`🏠 *AL-DIA - COMPROBANTE DE PAGO*
+━━━━━━━━━━━━━━━━━━━━━━━
+🧾 *N° Recibo:* ${nroRecibo}
+👤 *Inquilino:* ${nombreCliente}
+🚪 *Referencia:* ${refCliente}
+📅 *Fecha:* ${fechaHoraStr}
+📌 *Concepto:* ${concepto}
+💵 *Monto:* S/ ${parseFloat(pago.monto || 0).toFixed(2)}
+💳 *Método:* ${pago.metodo || 'Efectivo'}
+━━━━━━━━━━━━━━━━━━━━━━━
+✅ *Estado:* PAGADO / CONFORME
+¡Muchas gracias por su puntualidad!`;
+
+    let telefono = cliente ? (cliente.telefono || '') : '';
+    let cleanPhone = String(telefono).replace(/\D/g, '');
+
+    if (!cleanPhone) {
+        let telPrompt = prompt(`El inquilino ${nombreCliente} no tiene número de WhatsApp registrado.\n\nIngresa su número (ej. 987654321) para guardarlo y enviar el comprobante, o presiona Cancelar para elegir el contacto directamente en WhatsApp:`, "");
+        if (telPrompt !== null && telPrompt.trim() !== "") {
+            cleanPhone = telPrompt.replace(/\D/g, '');
+            if (cliente) {
+                cliente.telefono = telPrompt.trim();
+                localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+            }
+        }
+    }
+
+    if (cleanPhone && cleanPhone.length === 9) {
+        cleanPhone = '51' + cleanPhone;
+    }
+
+    let urlWhatsApp = cleanPhone
+        ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(mensaje)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+
+    abrirEnlaceWhatsApp(urlWhatsApp);
+}
+
+// --- V3: ENVIAR RECORDATORIO DE PAGO POR WHATSAPP ---
+function enviarRecordatorioWhatsApp(clienteId, pagoId) {
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    let cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) {
+        alert("No se encontró la información del inquilino.");
+        return;
+    }
+
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let pago = pagoId ? pagos.find(p => p.id === pagoId) : pagos.find(p => p.cliente_id === clienteId && !p.pagado && p.mes === mesVisualizado && p.año === añoVisualizado);
+
+    let montoDeuda = pago ? pago.monto : cliente.monto;
+    let mesTexto = (typeof meses !== 'undefined' && meses[mesVisualizado - 1]) ? meses[mesVisualizado - 1] : `Mes ${mesVisualizado}`;
+    let concepto = (cliente.tipo_servicio && cliente.tipo_servicio !== 'alquiler')
+        ? `${cliente.tipo_servicio.charAt(0).toUpperCase() + cliente.tipo_servicio.slice(1)} - ${mesTexto} ${añoVisualizado}`
+        : `Alquiler - ${mesTexto} ${añoVisualizado}`;
+
+    let refCliente = cliente.ref || 'Habitación/Servicio';
+    let diaCobro = cliente.dia || 1;
+
+    let mensaje = 
+`🏠 *AL-DIA - RECORDATORIO DE PAGO*
+━━━━━━━━━━━━━━━━━━━━━━━
+Hola *${cliente.nombre}*, le saludamos cordialmente para recordarle su pago pendiente:
+📌 *Concepto:* ${concepto}
+🚪 *Referencia:* ${refCliente}
+💵 *Monto Pendiente:* S/ ${parseFloat(montoDeuda || 0).toFixed(2)}
+📅 *Día de Cobro:* ${diaCobro} de ${mesTexto}
+━━━━━━━━━━━━━━━━━━━━━━━
+Agradecemos gestionar su pago a la brevedad.
+¡Muchas gracias por su atención!`;
+
+    let telefono = cliente.telefono || '';
+    let cleanPhone = String(telefono).replace(/\D/g, '');
+
+    if (!cleanPhone) {
+        let telPrompt = prompt(`El inquilino ${cliente.nombre} no tiene número de WhatsApp registrado.\n\nIngresa su número (ej. 987654321) para guardarlo y enviar el recordatorio, o presiona Cancelar para elegir el contacto directamente en WhatsApp:`, "");
+        if (telPrompt !== null && telPrompt.trim() !== "") {
+            cleanPhone = telPrompt.replace(/\D/g, '');
+            cliente.telefono = telPrompt.trim();
+            localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+        }
+    }
+
+    if (cleanPhone && cleanPhone.length === 9) {
+        cleanPhone = '51' + cleanPhone;
+    }
+
+    let urlWhatsApp = cleanPhone
+        ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(mensaje)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+
+    abrirEnlaceWhatsApp(urlWhatsApp);
+}
+
+// --- V3: ENVIAR RECORDATORIO DE GARANTÍA POR WHATSAPP ---
+function enviarRecordatorioGarantiaWhatsApp(clienteId) {
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+    let cliente = clientes.find(c => c.id === clienteId);
+    if (!cliente) return;
+
+    let refCliente = cliente.ref || 'Habitación';
+    let fechaGar = cliente.garantia_fecha || '';
+    let [anioGar, mesGar, diaGar] = fechaGar ? fechaGar.split('-').map(Number) : [null, null, null];
+    let fechaTexto = diaGar ? `${diaGar} de ${(typeof meses !== 'undefined' && meses[mesGar - 1]) ? meses[mesGar - 1] : mesGar} ${anioGar}` : 'Pendiente';
+
+    let mensaje = 
+`🏠 *AL-DIA - RECORDATORIO DE GARANTÍA*
+━━━━━━━━━━━━━━━━━━━━━━━
+Hola *${cliente.nombre}*, le saludamos cordialmente para recordarle el depósito de garantía pendiente:
+📌 *Concepto:* Depósito de Garantía
+🚪 *Referencia:* ${refCliente}
+💵 *Monto:* S/ ${parseFloat(cliente.garantia_monto || 0).toFixed(2)}
+📅 *Fecha Acordada:* ${fechaTexto}
+━━━━━━━━━━━━━━━━━━━━━━━
+Agradecemos coordinar la regularización de la garantía.
+¡Muchas gracias!`;
+
+    let telefono = cliente.telefono || '';
+    let cleanPhone = String(telefono).replace(/\D/g, '');
+
+    if (!cleanPhone) {
+        let telPrompt = prompt(`El inquilino ${cliente.nombre} no tiene número de WhatsApp registrado.\n\nIngresa su número (ej. 987654321) para guardarlo y enviar el recordatorio, o presiona Cancelar para elegir el contacto directamente en WhatsApp:`, "");
+        if (telPrompt !== null && telPrompt.trim() !== "") {
+            cleanPhone = telPrompt.replace(/\D/g, '');
+            cliente.telefono = telPrompt.trim();
+            localStorage.setItem('aldia_clientes', JSON.stringify(clientes));
+        }
+    }
+
+    if (cleanPhone && cleanPhone.length === 9) {
+        cleanPhone = '51' + cleanPhone;
+    }
+
+    let urlWhatsApp = cleanPhone
+        ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(mensaje)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(mensaje)}`;
+
+    abrirEnlaceWhatsApp(urlWhatsApp);
+}
+
+window.enviarComprobanteWhatsApp = enviarComprobanteWhatsApp;
+window.enviarRecordatorioWhatsApp = enviarRecordatorioWhatsApp;
+window.enviarRecordatorioGarantiaWhatsApp = enviarRecordatorioGarantiaWhatsApp;
+
+// ==========================================================================
+// --- V3: MOTOR DE COMPROBANTES PDF E ID ÚNICO (generarReciboPDF) ---
+// ==========================================================================
+function generarReciboPDF(pagoId) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert("La librería jsPDF aún no ha terminado de cargar. Por favor verifica tu conexión a internet.");
+        return;
+    }
+
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let clientes = JSON.parse(localStorage.getItem('aldia_clientes')) || [];
+
+    let pago = pagos.find(p => Number(p.id) === Number(pagoId));
+    if (!pago) {
+        alert("No se encontró la información del pago.");
+        return;
+    }
+
+    let cliente = clientes.find(c => Number(c.id) === Number(pago.cliente_id));
+
+    // 1. Trazabilidad: código único inmutable y fecha de emisión exacta
+    let idRecibo = pago.id_recibo;
+    if (!idRecibo) {
+        idRecibo = "REC-" + String(pago.id).slice(-6);
+        pago.id_recibo = idRecibo;
+    }
+
+    let fechaEmision = pago.fecha_emision;
+    if (!fechaEmision) {
+        let f = pago.fecha_pago_real ? new Date(Number(pago.fecha_pago_real)) : new Date(Number(pago.id));
+        fechaEmision = isNaN(f.getTime()) ? new Date().toLocaleString('es-PE') : f.toLocaleString('es-PE');
+        pago.fecha_emision = fechaEmision;
+    }
+
+    // Persistir si no estaban guardados en el objeto para garantizar inmutabilidad
+    let pIdx = pagos.findIndex(p => Number(p.id) === Number(pagoId));
+    if (pIdx !== -1 && (!pagos[pIdx].id_recibo || !pagos[pIdx].fecha_emision)) {
+        pagos[pIdx].id_recibo = idRecibo;
+        pagos[pIdx].fecha_emision = fechaEmision;
+        localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
+    }
+
+    // 2. Extracción y formateo estructurado de datos
+    let nombreInquilino = cliente 
+        ? `${cliente.nombre} ${cliente.apellido || ''}`.trim() 
+        : (pago.historico || 'Inquilino');
+
+    let refInquilino = (cliente && cliente.ref) 
+        ? cliente.ref 
+        : (pago.es_garantia ? 'Garantía' : 'Habitación / Referencia');
+
+    let mesTexto = (typeof meses !== 'undefined' && meses[pago.mes - 1]) 
+        ? meses[pago.mes - 1] 
+        : `Mes ${pago.mes}`;
+
+    let concepto = "";
+    if (pago.es_garantia) {
+        concepto = "Depósito de Garantía";
+    } else if (cliente && cliente.tipo_servicio && cliente.tipo_servicio !== 'alquiler') {
+        let nombreServ = cliente.tipo_servicio.charAt(0).toUpperCase() + cliente.tipo_servicio.slice(1);
+        concepto = `${nombreServ} - ${mesTexto} ${pago.año}`;
+    } else {
+        concepto = `Alquiler - ${mesTexto} ${pago.año}`;
+    }
+
+    let fechaVencimiento = pago.fecha_vencimiento;
+    if (!fechaVencimiento) {
+        if (cliente && cliente.dia) {
+            let diaPad = String(cliente.dia).padStart(2, '0');
+            let mesPad = String(pago.mes || mesActual).padStart(2, '0');
+            fechaVencimiento = `${diaPad}/${mesPad}/${pago.año || añoActual}`;
+        } else if (pago.dia) {
+            let diaPad = String(pago.dia).padStart(2, '0');
+            let mesPad = String(pago.mes || mesActual).padStart(2, '0');
+            fechaVencimiento = `${diaPad}/${mesPad}/${pago.año || añoActual}`;
+        } else {
+            fechaVencimiento = `${mesTexto} ${pago.año}`;
+        }
+    } else if (typeof fechaVencimiento === 'string' && fechaVencimiento.includes('-') && fechaVencimiento.length === 10) {
+        let partes = fechaVencimiento.split('-');
+        fechaVencimiento = `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+
+    // 3. Renderizado con jsPDF
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.width;
+
+    const marginX = 20;
+    const startY = 22;
+    const cardWidth = pageWidth - (marginX * 2); // 170 mm
+    const cardHeight = 168;
+
+    // Marco exterior con bordes redondeados
+    doc.setDrawColor(26, 58, 138); // Azul de marca AL-DIA
+    doc.setLineWidth(0.7);
+    doc.roundedRect(marginX, startY, cardWidth, cardHeight, 4, 4, 'S');
+
+    // Banda superior decorativa
+    doc.setFillColor(26, 58, 138);
+    doc.roundedRect(marginX, startY, cardWidth, 6, 4, 4, 'F');
+    doc.rect(marginX, startY + 2, cardWidth, 4, 'F');
+
+    // === CABECERA ===
+    // "AL-DIA" (Centro, negrita)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(26, 58, 138);
+    doc.text("AL-DIA", pageWidth / 2, startY + 18, { align: "center" });
+
+    // "COMPROBANTE DE PAGO" (Subtítulo)
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(100, 116, 139);
+    doc.text("COMPROBANTE DE PAGO", pageWidth / 2, startY + 25, { align: "center" });
+
+    // "Recibo N°: [id_recibo]" (Derecha)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(33, 37, 41);
+    doc.text(`Recibo N°: ${idRecibo}`, marginX + cardWidth - 8, startY + 18, { align: "right" });
+
+    // Línea separadora
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.line(marginX + 6, startY + 31, marginX + cardWidth - 6, startY + 31);
+
+    // === DATOS ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 138);
+    doc.text("DATOS DEL INQUILINO", marginX + 8, startY + 39);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Inquilino:", marginX + 8, startY + 47);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(nombreInquilino, marginX + 48, startY + 47);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("Referencia:", marginX + 8, startY + 54);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(refInquilino, marginX + 48, startY + 54);
+
+    // Línea separadora
+    doc.line(marginX + 6, startY + 61, marginX + cardWidth - 6, startY + 61);
+
+    // === DETALLES ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 138);
+    doc.text("DETALLES DEL COBRO", marginX + 8, startY + 69);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Concepto:", marginX + 8, startY + 77);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(concepto, marginX + 48, startY + 77);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("Fecha de Vencimiento:", marginX + 8, startY + 84);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(fechaVencimiento), marginX + 48, startY + 84);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("Fecha de Emisión:", marginX + 8, startY + 91);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(fechaEmision), marginX + 48, startY + 91);
+
+    // Línea separadora
+    doc.line(marginX + 6, startY + 98, marginX + cardWidth - 6, startY + 98);
+
+    // === LIQUIDACIÓN ===
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 138);
+    doc.text("LIQUIDACIÓN Y PAGO", marginX + 8, startY + 106);
+
+    // Método de Pago ("Billetera Digital / Efectivo" - texto fijo)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Método de Pago:", marginX + 8, startY + 114);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text("Billetera Digital / Efectivo", marginX + 48, startY + 114);
+
+    // Estado ("PAGADO")
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("Estado:", marginX + 8, startY + 123);
+
+    // Badge verde para PAGADO
+    doc.setFillColor(209, 250, 229); // #d1fae5
+    doc.setDrawColor(16, 185, 129);  // #10b981
+    doc.roundedRect(marginX + 48, startY + 118.5, 24, 6.5, 2, 2, 'FD');
+    doc.setTextColor(6, 95, 70);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("PAGADO", marginX + 60, startY + 123, { align: "center" });
+
+    // Monto Total ("S/ [monto]")
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(marginX + 8, startY + 130, cardWidth - 16, 18, 3, 3, 'FD');
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Monto Total:", marginX + 16, startY + 141.5);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(16, 185, 129); // #10b981
+    doc.text(`S/ ${parseFloat(pago.monto || 0).toFixed(2)}`, marginX + cardWidth - 16, startY + 141.5, { align: "right" });
+
+    // Pie de página del comprobante (Disclaimer SUNAT)
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    const disclaimerSUNAT = "Nota: Este documento es estrictamente de control interno y representativo. No constituye un comprobante de pago electrónico válido para efectos tributarios ante la SUNAT.";
+    const lineasDisclaimer = doc.splitTextToSize(disclaimerSUNAT, cardWidth - 14);
+    doc.text(lineasDisclaimer, pageWidth / 2, startY + 156, { align: "center" });
+
+    // 4. Descarga o Compartición
+    let cleanNombre = nombreInquilino.replace(/[^a-zA-Z0-9_-]/g, '_');
+    let nombreArchivo = `${idRecibo}_${cleanNombre}.pdf`;
+
+    const isCapacitorNative = Boolean(
+        typeof window !== 'undefined' &&
+        window.Capacitor &&
+        (
+            (typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
+            (typeof window.Capacitor.getPlatform === 'function' && window.Capacitor.getPlatform() !== 'web') ||
+            Boolean(window.Capacitor.Plugins?.Filesystem) ||
+            Boolean(window.Capacitor.Plugins?.Share)
+        )
+    );
+
+    if (isCapacitorNative) {
+        guardarYCompartirPDFRecibo(doc, nombreArchivo, idRecibo, nombreInquilino);
+    } else {
+        doc.save(nombreArchivo);
+    }
+}
+
+async function guardarYCompartirPDFRecibo(doc, nombreArchivo, idRecibo, nombreInquilino) {
+    try {
+        const Filesystem = window.Capacitor?.Plugins?.Filesystem;
+        const Share = window.Capacitor?.Plugins?.Share;
+        const dataUri = doc.output('datauristring');
+        const base64Data = dataUri.split(',')[1];
+
+        if (Filesystem?.writeFile) {
+            const writeResult = await Filesystem.writeFile({
+                path: nombreArchivo,
+                data: base64Data,
+                directory: 'CACHE'
+            });
+
+            if (Share?.share && writeResult?.uri) {
+                await Share.share({
+                    title: `Comprobante ${idRecibo}`,
+                    text: `Comprobante de pago ${idRecibo} - ${nombreInquilino}`,
+                    dialogTitle: 'Ver / Compartir Comprobante PDF',
+                    files: [writeResult.uri]
+                });
+                return;
+            }
+        }
+        doc.save(nombreArchivo);
+    } catch (err) {
+        const msg = (err && err.message) ? err.message : String(err || '');
+        if (!/cancel/i.test(msg) && err?.name !== 'AbortError') {
+            console.warn("Fallo en compartir nativo, ejecutando doc.save:", err);
+            doc.save(nombreArchivo);
+        }
+    }
+}
+
+window.generarReciboPDF = generarReciboPDF;
+
 // --- NUEVA FUNCIÓN: REVERTIR COBRO ---
-function revertirPago(pagoId, nombre) {
-    if (confirm(`⚠️ ¿Seguro que deseas REVERTIR el cobro de ${nombre}?`)) {
-        guardarSnapshot();
-        let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
-        let index = pagos.findIndex(p => p.id === pagoId);
+function revertirPago(pagoId, nombre, monto) {
+    let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
+    let pObj = pagos.find(p => p.id === pagoId);
+    let pago = {
+        nombre: nombre || (pObj ? (pObj.nombre || pObj.historico) : 'Inquilino'),
+        monto: monto !== undefined ? monto : (pObj ? pObj.monto : 0)
+    };
+
+    if (!confirm(`¿Revertir el pago de ${pago.nombre}? El saldo bajará S/ ${Number(pago.monto).toFixed(2)}`)) {
+        return;
+    }
+    guardarSnapshot();
+    let index = pagos.findIndex(p => p.id === pagoId);
 
         if (index !== -1) {
             const pagoRevertido = pagos[index];
@@ -507,15 +1195,17 @@ function revertirPago(pagoId, nombre) {
                 // Si NO se encuentra deuda vinculada: cambia pagado = false
                 pagoRevertido.pagado = false;
                 pagoRevertido.metodo = "";
+                delete pagoRevertido.id_recibo;
+                delete pagoRevertido.fecha_emision;
+                delete pagoRevertido.fecha_pago_real;
             }
 
             localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
 
-            mostrarToastDeshacer(`Cobro de ${nombre} revertido.`);
+            mostrarToastDeshacer(`Cobro de ${pago.nombre} revertido.`);
             renderizarDashboard();
             renderizarEstadisticas();
         }
-    }
 }
 
 function guardarNuevoCliente(e) {
@@ -569,10 +1259,11 @@ function guardarNuevoCliente(e) {
         tipo_servicio: tipoServicio, // ¡Este es el dato que faltaba!
         nombre: document.getElementById('cli-nombre').value,
         apellido: document.getElementById('cli-apellido').value,
+        telefono: document.getElementById('cli-telefono') ? document.getElementById('cli-telefono').value.trim() : "",
         monto: parseFloat(document.getElementById('cli-monto').value),
         fecha_inicio: fechaInput,
         dia: parseInt(partes[2]),
-        ref: document.getElementById('cli-ref').value,
+        ref: document.getElementById('cli-ref') ? document.getElementById('cli-ref').value : "",
         activo: true,
         garantia_monto: montoGarantia,
         garantia_pagada: pagadaGarantia,
@@ -607,7 +1298,9 @@ function guardarNuevoCliente(e) {
             pagado: true,
             metodo: metodoSeleccionado,
             historico: `${nCli.nombre} (Garantía)`.trim(),
-            es_garantia: true
+            es_garantia: true,
+            id_recibo: "REC-" + Date.now().toString().slice(-6),
+            fecha_emision: new Date().toLocaleString('es-PE')
         });
     }
 
@@ -623,8 +1316,9 @@ function guardarNuevoCliente(e) {
             let añoCobro = añoBase;
             while (mesCobro > 12) { mesCobro -= 12; añoCobro++; }
 
+            let idPagoGen = Date.now() + i;
             pagos.push({
-                id: Date.now() + i,
+                id: idPagoGen,
                 fecha_pago_real: Date.now(),
                 cliente_id: nCli.id,
                 mes: mesCobro,
@@ -632,7 +1326,9 @@ function guardarNuevoCliente(e) {
                 monto: nCli.monto,
                 pagado: true,
                 metodo: metodoSeleccionado,
-                historico: `${nCli.nombre} ${nCli.apellido}`.trim()
+                historico: `${nCli.nombre} ${nCli.apellido}`.trim(),
+                id_recibo: "REC-" + idPagoGen.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
         }
     }
@@ -892,6 +1588,75 @@ function borrarTodosLosClientes() {
 // --- RENDERIZADO DEL HISTORIAL AGRUPADO (AHORA CON MÁS DETALLES) ---
 // --- RENDERIZADO DEL HISTORIAL AGRUPADO (SIN TACHOS DE BASURA) ---
 // --- RENDERIZADO DEL HISTORIAL AGRUPADO (SIN TACHOS DE BASURA) ---
+// --- ESTADO Y TOGGLE INTERACTIVO DE FILTROS EN HISTORIAL FINANCIERO ---
+let filtroTransacciones = 'todos'; // 'todos' | 'ingresos' | 'egresos'
+
+function toggleFiltroTransacciones(tipo) {
+    if (filtroTransacciones === tipo) {
+        filtroTransacciones = 'todos';
+    } else {
+        filtroTransacciones = tipo;
+    }
+    actualizarEstilosCajasResumen();
+    renderizarHistorial();
+}
+
+function actualizarEstilosCajasResumen() {
+    const cardIng = document.getElementById('cardResumenIngresos');
+    const cardEgr = document.getElementById('cardResumenEgresos');
+    if (!cardIng || !cardEgr) return;
+
+    if (filtroTransacciones === 'ingresos') {
+        cardIng.style.opacity = '1';
+        cardIng.style.transform = 'scale(1.02)';
+        cardIng.style.border = '2.5px solid #198754';
+        cardIng.style.boxShadow = '0 3px 8px rgba(25, 135, 84, 0.25)';
+        cardIng.classList.remove('opacity-50');
+
+        cardEgr.style.opacity = '0.5';
+        cardEgr.style.transform = 'scale(0.98)';
+        cardEgr.style.border = '1px solid #dc3545';
+        cardEgr.style.boxShadow = 'none';
+        cardEgr.classList.add('opacity-50');
+    } else if (filtroTransacciones === 'egresos') {
+        cardEgr.style.opacity = '1';
+        cardEgr.style.transform = 'scale(1.02)';
+        cardEgr.style.border = '2.5px solid #dc3545';
+        cardEgr.style.boxShadow = '0 3px 8px rgba(220, 53, 69, 0.25)';
+        cardEgr.classList.remove('opacity-50');
+
+        cardIng.style.opacity = '0.5';
+        cardIng.style.transform = 'scale(0.98)';
+        cardIng.style.border = '1px solid #198754';
+        cardIng.style.boxShadow = 'none';
+        cardIng.classList.add('opacity-50');
+    } else {
+        // 'todos' / 'ambos'
+        cardIng.style.opacity = '1';
+        cardIng.style.transform = 'scale(1)';
+        cardIng.style.border = '1px solid #198754';
+        cardIng.style.boxShadow = 'none';
+        cardIng.classList.remove('opacity-50');
+
+        cardEgr.style.opacity = '1';
+        cardEgr.style.transform = 'scale(1)';
+        cardEgr.style.border = '1px solid #dc3545';
+        cardEgr.style.boxShadow = 'none';
+        cardEgr.classList.remove('opacity-50');
+    }
+}
+
+function obtenerTipoFiltroHistorial() {
+    if (filtroTransacciones === 'ingresos') return 'ingresos';
+    if (filtroTransacciones === 'egresos') return 'egresos';
+    return 'ambos';
+}
+
+window.filtroTransacciones = filtroTransacciones;
+window.toggleFiltroTransacciones = toggleFiltroTransacciones;
+window.actualizarEstilosCajasResumen = actualizarEstilosCajasResumen;
+window.obtenerTipoFiltroHistorial = obtenerTipoFiltroHistorial;
+
 function renderizarEstadisticas() {
     let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
     let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
@@ -914,17 +1679,145 @@ function renderizarEstadisticas() {
         }
     }
 
-    // Capturar Filtro de Tipo (Corrección Crítica UI: select nativo)
-    const tipoFiltro = document.getElementById('filtroTipoHistorial') ? document.getElementById('filtroTipoHistorial').value : 'ambos';
+    // Capturar Filtro de Tipo (Controles Segmentados o fallback select)
+    const tipoFiltro = obtenerTipoFiltroHistorial();
 
     let historialAgrupado = {};
     const keySeleccionada = `${anioFiltro}-${String(mesFiltro).padStart(2, '0')}`;
     historialAgrupado[keySeleccionada] = { mes: mesFiltro, año: anioFiltro, ingresos: [], egresos: [] };
 
-    // 1. Filtrar y Agrupar Ingresos (Solo pagados que coincidan con mes y año)
-    if (tipoFiltro === 'ambos' || tipoFiltro === 'ingresos') {
-        pagos.filter(p => {
-            if (!p.pagado) return false;
+    // 1. Filtrar y Agrupar Ingresos (Array COMPLETO del mes, inmutable para cálculo de totales)
+    pagos.filter(p => {
+        if (!p.pagado) return false;
+        let pAnio = Number(p.año || p.ano);
+        let pMes = Number(p.mes);
+        if ((!pAnio || !pMes) && p.fecha_pago_real) {
+            let f = new Date(Number(p.fecha_pago_real));
+            if (!isNaN(f.getTime())) {
+                pAnio = f.getFullYear();
+                pMes = f.getMonth() + 1;
+            }
+        }
+        return pAnio === anioFiltro && pMes === mesFiltro;
+    }).forEach(pago => {
+        // Buscar los detalles extra del cliente
+        let cliente = clientes.find(c => c.id === pago.cliente_id);
+        let tipoServicio = cliente ? cliente.tipo_servicio : 'cuarto';
+        let icono = '<i class="fas fa-home"></i>';
+        if (tipoServicio === 'streaming') icono = '<i class="fas fa-tv"></i>';
+        else if (tipoServicio === 'academia') icono = '<i class="fas fa-graduation-cap"></i>';
+        else if (tipoServicio === 'cochera') icono = '<i class="fas fa-car"></i>';
+        else if (tipoServicio === 'servicio') icono = '<i class="fas fa-concierge-bell"></i>';
+
+        let referencia = (cliente && cliente.ref) ? cliente.ref : (tipoServicio === 'streaming' ? 'Streaming' : 'General');
+        let colorBadge = tipoServicio === 'streaming' ? 'bg-dark text-white' : 'bg-primary bg-opacity-10 text-primary';
+        let badgeHtml = `<span class="badge ${colorBadge} rounded-pill ms-2" style="font-size: 0.65rem;">${icono} ${referencia}</span>`;
+
+        // Extraer la Fecha y Hora exactas para TODOS los ingresos (prioridad a fecha_pago_real)
+        const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
+        const fechaPago = new Date(Number(timestampBase));
+        let d = fechaPago.getDate().toString().padStart(2, '0');
+        let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
+        let y = fechaPago.getFullYear();
+        let hrs = fechaPago.getHours().toString().padStart(2, '0');
+        let mins = fechaPago.getMinutes().toString().padStart(2, '0');
+        let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+
+        historialAgrupado[keySeleccionada].ingresos.push({ 
+            id: pago.id, 
+            tipo: 'ingreso', 
+            desc: pago.historico, 
+            badge: badgeHtml,
+            monto: pago.monto, 
+            metodo: pago.metodo, 
+            fechaStr: fechaStr,
+            timestampReal: Number(pago.fecha_pago_real || pago.id),
+            id_recibo: pago.id_recibo || ''
+        });
+    });
+
+    // 2. Filtrar y Agrupar Egresos (Array COMPLETO del mes, inmutable para cálculo de totales)
+    egresos.forEach(egr => {
+        let d, m, y;
+        if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
+            let partes = egr.fecha.split('-');
+            y = Number(partes[0]);
+            m = Number(partes[1]);
+            d = String(partes[2]).padStart(2, '0');
+        } else {
+            d = String(egr.dia || '01').padStart(2, '0');
+            m = Number(egr.mes || mesFiltro);
+            y = Number(egr.año || anioFiltro);
+        }
+
+        if (y === anioFiltro && m === mesFiltro) {
+            let hrs = "00";
+            let mins = "00";
+            const dateId = new Date(Number(egr.id));
+            if (egr.id && !isNaN(dateId.getTime()) && Number(egr.id) > 1000000000000) {
+                hrs = dateId.getHours().toString().padStart(2, '0');
+                mins = dateId.getMinutes().toString().padStart(2, '0');
+            }
+
+            let fechaStrEgr = `${d}/${String(m).padStart(2, '0')}/${y} a las ${hrs}:${mins}`;
+
+            let timestampEgreso = Number(egr.id);
+            if (egr.fecha) {
+                const partesFecha = egr.fecha.split('-').map(Number);
+                if (partesFecha.length === 3) {
+                    const fechaBaseId = new Date(Number(egr.id));
+                    const hrsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
+                    const minsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
+                    const secsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
+                    timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrsB, minsB, secsB).getTime();
+                }
+            }
+
+            historialAgrupado[keySeleccionada].egresos.push({ 
+                id: egr.id, 
+                tipo: 'egreso', 
+                desc: egr.motivo, 
+                monto: egr.monto, 
+                fechaStr: fechaStrEgr, 
+                timestampReal: timestampEgreso 
+            });
+        }
+    });
+
+    // CÁLCULO INMUTABLE DEL SALDO NETO Y TOTALES SOBRE EL MES COMPLETO
+    let dataMes = historialAgrupado[keySeleccionada];
+    let sumaIngresos = dataMes.ingresos.reduce((sum, item) => sum + parseFloat(item.monto || 0), 0);
+    let sumaEgresos = dataMes.egresos.reduce((sum, item) => sum + parseFloat(item.monto || 0), 0);
+    let neto = sumaIngresos - sumaEgresos;
+
+    dataMes.ingresos.sort((a, b) => b.timestampReal - a.timestampReal);
+    dataMes.egresos.sort((a, b) => b.timestampReal - a.timestampReal);
+
+    // --- FILTRO DE BÚSQUEDA EN TIEMPO REAL (Buscador de Auditoría) ---
+    const inputBuscador = document.getElementById('buscadorHistorial');
+    const queryBusqueda = (inputBuscador ? inputBuscador.value : '').trim().toLowerCase();
+
+    let ingresosAMostrar = dataMes.ingresos;
+    let egresosAMostrar = dataMes.egresos;
+
+    if (queryBusqueda) {
+        ingresosAMostrar = dataMes.ingresos.filter(ing => {
+            const desc = (ing.desc || '').toLowerCase();
+            const idRec = (ing.id_recibo || '').toLowerCase();
+            const met = (ing.metodo || '').toLowerCase();
+            return desc.includes(queryBusqueda) || idRec.includes(queryBusqueda) || met.includes(queryBusqueda);
+        });
+        egresosAMostrar = dataMes.egresos.filter(egr => {
+            const desc = (egr.desc || '').toLowerCase();
+            return desc.includes(queryBusqueda);
+        });
+    }
+
+    // Coincidencias de auditoría en otros periodos cuando se usa el buscador
+    let otrosIngresosCoincidentes = [];
+    if (queryBusqueda) {
+        pagos.forEach(p => {
+            if (!p.pagado) return;
             let pAnio = Number(p.año || p.ano);
             let pMes = Number(p.mes);
             if ((!pAnio || !pMes) && p.fecha_pago_real) {
@@ -934,166 +1827,178 @@ function renderizarEstadisticas() {
                     pMes = f.getMonth() + 1;
                 }
             }
-            return pAnio === anioFiltro && pMes === mesFiltro;
-        }).forEach(pago => {
-            // Buscar los detalles extra del cliente
-            let cliente = clientes.find(c => c.id === pago.cliente_id);
-            let tipoServicio = cliente ? cliente.tipo_servicio : 'cuarto';
-            let icono = '<i class="fas fa-home"></i>';
-            if (tipoServicio === 'streaming') icono = '<i class="fas fa-tv"></i>';
-            else if (tipoServicio === 'academia') icono = '<i class="fas fa-graduation-cap"></i>';
-            else if (tipoServicio === 'cochera') icono = '<i class="fas fa-car"></i>';
-            else if (tipoServicio === 'servicio') icono = '<i class="fas fa-concierge-bell"></i>';
+            if (pAnio === anioFiltro && pMes === mesFiltro) return;
 
-            let referencia = (cliente && cliente.ref) ? cliente.ref : (tipoServicio === 'streaming' ? 'Streaming' : 'General');
-            let colorBadge = tipoServicio === 'streaming' ? 'bg-dark text-white' : 'bg-primary bg-opacity-10 text-primary';
-            let badgeHtml = `<span class="badge ${colorBadge} rounded-pill ms-2" style="font-size: 0.65rem;">${icono} ${referencia}</span>`;
+            const descP = (p.historico || '').toLowerCase();
+            const idReciboP = (p.id_recibo || '').toLowerCase();
+            const metodoP = (p.metodo || '').toLowerCase();
 
-            // Extraer la Fecha y Hora exactas para TODOS los ingresos (prioridad a fecha_pago_real)
-            const timestampBase = pago.fecha_pago_real ? pago.fecha_pago_real : pago.id;
-            const fechaPago = new Date(Number(timestampBase));
-            let d = fechaPago.getDate().toString().padStart(2, '0');
-            let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
-            let y = fechaPago.getFullYear();
-            let hrs = fechaPago.getHours().toString().padStart(2, '0');
-            let mins = fechaPago.getMinutes().toString().padStart(2, '0');
-            let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
+            if (descP.includes(queryBusqueda) || idReciboP.includes(queryBusqueda) || metodoP.includes(queryBusqueda)) {
+                let cliente = clientes.find(c => c.id === p.cliente_id);
+                let tipoServicio = cliente ? cliente.tipo_servicio : 'cuarto';
+                let referencia = (cliente && cliente.ref) ? cliente.ref : (tipoServicio === 'streaming' ? 'Streaming' : 'General');
+                let badgeHtml = `<span class="badge bg-secondary bg-opacity-10 text-secondary rounded-pill ms-2" style="font-size: 0.65rem;">${referencia}</span>`;
 
-            historialAgrupado[keySeleccionada].ingresos.push({ 
-                id: pago.id, 
-                tipo: 'ingreso', 
-                desc: pago.historico, 
-                badge: badgeHtml,
-                monto: pago.monto, 
-                metodo: pago.metodo, 
-                fechaStr: fechaStr,
-                timestampReal: Number(pago.fecha_pago_real || pago.id)
-            });
-        });
-    }
+                const timestampBase = p.fecha_pago_real ? p.fecha_pago_real : p.id;
+                const fechaPago = new Date(Number(timestampBase));
+                let d = fechaPago.getDate().toString().padStart(2, '0');
+                let m = (fechaPago.getMonth() + 1).toString().padStart(2, '0');
+                let y = fechaPago.getFullYear();
+                let hrs = fechaPago.getHours().toString().padStart(2, '0');
+                let mins = fechaPago.getMinutes().toString().padStart(2, '0');
+                let fechaStr = `${d}/${m}/${y} a las ${hrs}:${mins}`;
 
-    // 2. Filtrar y Agrupar Egresos (Coincidencia con mes y año)
-    if (tipoFiltro === 'ambos' || tipoFiltro === 'egresos') {
-        egresos.forEach(egr => {
-            let d, m, y;
-            if (egr.fecha && typeof egr.fecha === 'string' && egr.fecha.includes('-')) {
-                let partes = egr.fecha.split('-');
-                y = Number(partes[0]);
-                m = Number(partes[1]);
-                d = String(partes[2]).padStart(2, '0');
-            } else {
-                d = String(egr.dia || '01').padStart(2, '0');
-                m = Number(egr.mes || mesFiltro);
-                y = Number(egr.año || anioFiltro);
-            }
-
-            if (y === anioFiltro && m === mesFiltro) {
-                let hrs = "00";
-                let mins = "00";
-                const dateId = new Date(Number(egr.id));
-                if (egr.id && !isNaN(dateId.getTime()) && Number(egr.id) > 1000000000000) {
-                    hrs = dateId.getHours().toString().padStart(2, '0');
-                    mins = dateId.getMinutes().toString().padStart(2, '0');
-                }
-
-                let fechaStrEgr = `${d}/${String(m).padStart(2, '0')}/${y} a las ${hrs}:${mins}`;
-
-                let timestampEgreso = Number(egr.id);
-                if (egr.fecha) {
-                    const partesFecha = egr.fecha.split('-').map(Number);
-                    if (partesFecha.length === 3) {
-                        const fechaBaseId = new Date(Number(egr.id));
-                        const hrsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getHours() : 0;
-                        const minsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getMinutes() : 0;
-                        const secsB = !isNaN(fechaBaseId.getTime()) ? fechaBaseId.getSeconds() : 0;
-                        timestampEgreso = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2], hrsB, minsB, secsB).getTime();
-                    }
-                }
-
-                historialAgrupado[keySeleccionada].egresos.push({ 
-                    id: egr.id, 
-                    tipo: 'egreso', 
-                    desc: egr.motivo, 
-                    monto: egr.monto, 
-                    fechaStr: fechaStrEgr, 
-                    timestampReal: timestampEgreso 
+                otrosIngresosCoincidentes.push({
+                    id: p.id,
+                    tipo: 'ingreso',
+                    desc: p.historico,
+                    badge: badgeHtml,
+                    monto: p.monto,
+                    metodo: p.metodo,
+                    fechaStr: fechaStr,
+                    timestampReal: Number(p.fecha_pago_real || p.id),
+                    id_recibo: p.id_recibo || 'Sin Código',
+                    periodoStr: `${String(pMes).padStart(2, '0')}/${pAnio}`
                 });
             }
         });
+        otrosIngresosCoincidentes.sort((a, b) => b.timestampReal - a.timestampReal);
     }
 
-    let dataMes = historialAgrupado[keySeleccionada];
-    let sumaIngresos = dataMes.ingresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
-    let sumaEgresos = dataMes.egresos.reduce((sum, item) => sum + parseFloat(item.monto), 0);
+    // Preparar elementos a mostrar según el filtro activo (Títulos Dinámicos y Botonera Apilada)
+    let itemsFinales = [];
+    let tituloFiltro = "";
 
-    // Recalcular montos mostrados en panel superior según tipoFiltro
-    let mostrarIngresos = (tipoFiltro === 'egresos') ? 0 : sumaIngresos;
-    let mostrarEgresos = (tipoFiltro === 'ingresos') ? 0 : sumaEgresos;
-    let neto = mostrarIngresos - mostrarEgresos;
-
-    dataMes.ingresos.sort((a, b) => b.timestampReal - a.timestampReal);
-    dataMes.egresos.sort((a, b) => b.timestampReal - a.timestampReal);
+    if (tipoFiltro === 'ingresos') {
+        itemsFinales = ingresosAMostrar.map(item => ({ ...item, subTipo: 'ingreso' }));
+        tituloFiltro = `INGRESOS REGISTRADOS (${itemsFinales.length}${queryBusqueda ? ' encontrados' : ''})`;
+    } else if (tipoFiltro === 'egresos') {
+        itemsFinales = egresosAMostrar.map(item => ({ ...item, subTipo: 'egreso' }));
+        tituloFiltro = `EGRESOS REGISTRADOS (${itemsFinales.length}${queryBusqueda ? ' encontrados' : ''})`;
+    } else {
+        // 'todos' / 'ambos'
+        itemsFinales = [
+            ...ingresosAMostrar.map(item => ({ ...item, subTipo: 'ingreso' })),
+            ...egresosAMostrar.map(item => ({ ...item, subTipo: 'egreso' }))
+        ];
+        itemsFinales.sort((a, b) => b.timestampReal - a.timestampReal);
+        tituloFiltro = `MOVIMIENTOS REGISTRADOS (${itemsFinales.length}${queryBusqueda ? ' encontrados' : ''})`;
+    }
 
     let listaItemsHtml = "";
 
-    // Renderizar Ingresos si aplica
-    if (tipoFiltro !== 'egresos') {
-        if (dataMes.ingresos.length > 0) {
-            listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-1 px-1 text-uppercase">Ingresos Registrados (${dataMes.ingresos.length})</div>`;
-            dataMes.ingresos.forEach(ing => {
+    // Título unificado y estabilizado (Anti-Salto)
+    listaItemsHtml += `
+    <div class="d-flex align-items-center mb-2 px-1" style="min-height: 2rem;">
+        <h6 class="text-muted small fw-bold m-0 text-uppercase">${tituloFiltro}</h6>
+    </div>`;
+
+    if (itemsFinales.length > 0) {
+        itemsFinales.forEach(item => {
+            if (item.subTipo === 'ingreso') {
+                let idReciboTexto = (item.id_recibo && String(item.id_recibo).trim() !== '' && item.id_recibo !== 'Sin Código') 
+                    ? `<span class="badge bg-light text-secondary border fw-normal" style="font-size:0.68rem;"><i class="fas fa-receipt me-1 text-muted"></i>${item.id_recibo}</span>`
+                    : `<span class="badge bg-light text-muted border fw-normal" style="font-size:0.68rem;">Sin Código</span>`;
+
                 listaItemsHtml += `
                 <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-success d-flex justify-content-between align-items-center">
-                    <div style="max-width: 75%;">
+                    <div class="flex-grow-1 overflow-hidden pe-2" style="min-width: 0;">
                         <div class="d-flex align-items-center mb-1 flex-wrap gap-1">
-                            <span class="fw-bold text-dark text-truncate">${ing.desc}</span>
-                            ${ing.badge}
+                            <span class="fw-bold text-dark text-truncate" style="max-width: 100%;" title="${item.desc}">${item.desc}</span>
+                            ${item.badge || ''}
+                            ${idReciboTexto}
                         </div>
-                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-check me-1"></i>Pagado el ${ing.fechaStr}</small>
-                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="fas fa-wallet me-1"></i>Ingreso por ${ing.metodo}</small>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-check me-1"></i>Pagado el ${item.fechaStr}</small>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="fas fa-wallet me-1"></i>Ingreso por ${item.metodo}</small>
                     </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="text-success fw-bold small">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
-                        <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarPagoHistorial(${ing.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <span class="text-success fw-bold small text-nowrap">+ S/ ${parseFloat(item.monto).toFixed(2)}</span>
+                        <div class="d-flex flex-column gap-2">
+                            <button class="btn btn-sm btn-outline-danger rounded-3" style="width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center;" onclick="generarReciboPDF(${item.id})" title="Ver PDF"><i class="fas fa-file-pdf" style="font-size: 0.85rem;"></i></button>
+                            <button class="btn btn-sm btn-outline-danger rounded-3" style="width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center;" onclick="eliminarPagoHistorial(${item.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.85rem;"></i></button>
+                        </div>
                     </div>
                 </div>`;
-            });
-        } else if (tipoFiltro === 'ingresos') {
-            listaItemsHtml += `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay ingresos registrados en este mes.</div>`;
-        }
-    }
-
-    // Renderizar Egresos si aplica
-    if (tipoFiltro !== 'ingresos') {
-        if (dataMes.egresos.length > 0) {
-            listaItemsHtml += `<div class="text-muted small fw-bold mb-2 mt-3 px-1 text-uppercase">Egresos Registrados (${dataMes.egresos.length})</div>`;
-            dataMes.egresos.forEach(egr => {
+            } else {
+                // Egreso
                 listaItemsHtml += `
                 <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-danger d-flex justify-content-between align-items-center">
-                    <div style="max-width: 75%;">
-                        <span class="fw-bold text-dark d-block mb-1">${egr.desc}</span>
-                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-minus me-1"></i>Egreso el ${egr.fechaStr}</small>
+                    <div class="flex-grow-1 overflow-hidden pe-2" style="min-width: 0;">
+                        <span class="fw-bold text-dark d-block mb-1 text-truncate" title="${item.desc}">${item.desc}</span>
+                        <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-minus me-1"></i>Egreso el ${item.fechaStr}</small>
                     </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="text-danger fw-bold small">- S/ ${parseFloat(egr.monto).toFixed(2)}</span>
-                        <button class="btn btn-sm btn-outline-danger" style="width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;" onclick="eliminarEgresoHistorial(${egr.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.75rem;"></i></button>
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <span class="text-danger fw-bold small text-nowrap">- S/ ${parseFloat(item.monto).toFixed(2)}</span>
+                        <div class="d-flex flex-column gap-2">
+                            <button class="btn btn-sm btn-outline-danger rounded-3" style="width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center;" onclick="eliminarEgresoHistorial(${item.id})" title="Eliminar registro"><i class="fas fa-trash-alt" style="font-size: 0.85rem;"></i></button>
+                        </div>
                     </div>
                 </div>`;
-            });
+            }
+        });
+    } else {
+        let msgVacio = 'No hay registros en este mes.';
+        if (queryBusqueda) {
+            msgVacio = `No se encontraron registros que coincidan con "<strong>${queryBusqueda}</strong>".`;
+        } else if (tipoFiltro === 'ingresos') {
+            msgVacio = 'No hay ingresos registrados en este mes.';
         } else if (tipoFiltro === 'egresos') {
-            listaItemsHtml += `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay egresos registrados en este mes.</div>`;
+            msgVacio = 'No hay egresos registrados en este mes.';
         }
+        listaItemsHtml += `
+        <div class="d-flex align-items-center justify-content-center text-muted small py-4" style="min-height: 2rem;">
+            <i class="fas fa-info-circle me-1"></i>${msgVacio}
+        </div>`;
     }
 
-    if (tipoFiltro === 'ambos' && dataMes.ingresos.length === 0 && dataMes.egresos.length === 0) {
-        listaItemsHtml = `<div class="text-center text-muted py-3 small"><i class="fas fa-info-circle me-1"></i>No hay ingresos ni egresos registrados en este mes.</div>`;
+    // Renderizar coincidencias en otros periodos (si existen)
+    if (otrosIngresosCoincidentes.length > 0) {
+        listaItemsHtml += `
+        <div class="d-flex align-items-center mb-2 mt-3 px-1" style="min-height: 2rem;">
+            <h6 class="text-primary small fw-bold m-0 text-uppercase"><i class="fas fa-search me-1"></i>Coincidencias en otros periodos (${otrosIngresosCoincidentes.length})</h6>
+        </div>`;
+        otrosIngresosCoincidentes.forEach(ing => {
+            let idReciboTexto = (ing.id_recibo && String(ing.id_recibo).trim() !== '' && ing.id_recibo !== 'Sin Código') 
+                ? `<span class="badge bg-light text-secondary border fw-normal" style="font-size:0.68rem;"><i class="fas fa-receipt me-1 text-muted"></i>${ing.id_recibo}</span>`
+                : `<span class="badge bg-light text-muted border fw-normal" style="font-size:0.68rem;">Sin Código</span>`;
+
+            listaItemsHtml += `
+            <div class="bg-white p-2 mb-2 rounded shadow-sm border-start border-4 border-primary d-flex justify-content-between align-items-center">
+                <div class="flex-grow-1 overflow-hidden pe-2" style="min-width: 0;">
+                    <div class="d-flex align-items-center mb-1 flex-wrap gap-1">
+                        <span class="fw-bold text-dark text-truncate" style="max-width: 100%;" title="${ing.desc}">${ing.desc}</span>
+                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill" style="font-size: 0.65rem;">Periodo: ${ing.periodoStr}</span>
+                        ${ing.badge}
+                        ${idReciboTexto}
+                    </div>
+                    <small class="text-muted d-block" style="font-size:0.7rem;"><i class="far fa-calendar-check me-1"></i>Pagado el ${ing.fechaStr}</small>
+                    <small class="text-muted d-block" style="font-size:0.7rem;"><i class="fas fa-wallet me-1"></i>Ingreso por ${ing.metodo}</small>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <span class="text-success fw-bold small text-nowrap">+ S/ ${parseFloat(ing.monto).toFixed(2)}</span>
+                    <div class="d-flex flex-column gap-2">
+                        <button class="btn btn-sm btn-outline-danger rounded-3" style="width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center;" onclick="generarReciboPDF(${ing.id})" title="Ver PDF"><i class="fas fa-file-pdf" style="font-size: 0.85rem;"></i></button>
+                    </div>
+                </div>
+            </div>`;
+        });
     }
 
-    let nombreMesTexto = (typeof meses !== 'undefined' && meses[mesFiltro - 1]) ? meses[mesFiltro - 1] : `Mes ${mesFiltro}`;
+    if (queryBusqueda && ingresosAMostrar.length === 0 && egresosAMostrar.length === 0 && otrosIngresosCoincidentes.length === 0) {
+        listaItemsHtml = `<div class="text-center text-muted py-4 small" style="min-height: 2rem;"><i class="fas fa-search me-1"></i>No se encontraron recibos ni registros que coincidan con "<strong>${queryBusqueda}</strong>".</div>`;
+    } else if (!queryBusqueda && tipoFiltro === 'ambos' && dataMes.ingresos.length === 0 && dataMes.egresos.length === 0) {
+        listaItemsHtml = `<div class="text-center text-muted py-3 small" style="min-height: 2rem;"><i class="fas fa-info-circle me-1"></i>No hay ingresos ni egresos registrados en este mes.</div>`;
+    }
+
+    // Forzar fecha del selector a español estricto ("OCTUBRE 2026")
+    const fechaObjMes = new Date(Number(anioFiltro), Number(mesFiltro) - 1, 1);
+    const formatoEspanol = new Intl.DateTimeFormat('es-PE', { month: 'long', year: 'numeric' });
+    const textoMesEspanol = formatoEspanol.format(fechaObjMes).toUpperCase().replace(/\bDE\b/g, '').replace(/\s+/g, ' ').trim();
 
     // Actualizar Encabezado Interno (Mes/Año y Neto)
     const elTextoMes = document.getElementById('historial-nombre-mes');
     if (elTextoMes) {
-        elTextoMes.textContent = `${nombreMesTexto} ${anioFiltro}`;
+        elTextoMes.textContent = textoMesEspanol;
     }
     const elBadgeNeto = document.getElementById('badgeNetoSuperior') || document.getElementById('historial-badge-neto');
     if (elBadgeNeto) {
@@ -1107,29 +2012,18 @@ function renderizarEstadisticas() {
     const elResumenEgr = document.getElementById('total-resumen-egresos');
     if (elResumenEgr) elResumenEgr.textContent = `S/ ${sumaEgresos.toFixed(2)}`;
 
-    // Lógica de Ocultamiento Dinámico y Ajuste de Columnas según Filtro
+    // Garantizar que ambas cajas permanezcan visibles en col-6 para funcionar como botones de filtrado interactivo
     const colResumenIngresos = document.getElementById('colResumenIngresos');
     const colResumenEgresos = document.getElementById('colResumenEgresos');
 
     if (colResumenIngresos && colResumenEgresos) {
-        if (tipoFiltro === 'ingresos') {
-            colResumenEgresos.classList.add('d-none');
-            colResumenIngresos.classList.remove('d-none', 'col-6');
-            colResumenIngresos.classList.add('col-12');
-            if (elBadgeNeto) elBadgeNeto.classList.add('d-none');
-        } else if (tipoFiltro === 'egresos') {
-            colResumenIngresos.classList.add('d-none');
-            colResumenEgresos.classList.remove('d-none', 'col-6');
-            colResumenEgresos.classList.add('col-12');
-            if (elBadgeNeto) elBadgeNeto.classList.add('d-none');
-        } else {
-            colResumenIngresos.classList.remove('d-none', 'col-12');
-            colResumenIngresos.classList.add('col-6');
-            colResumenEgresos.classList.remove('d-none', 'col-12');
-            colResumenEgresos.classList.add('col-6');
-            if (elBadgeNeto) elBadgeNeto.classList.remove('d-none');
-        }
+        colResumenIngresos.classList.remove('d-none', 'col-12');
+        colResumenIngresos.classList.add('col-6');
+        colResumenEgresos.classList.remove('d-none', 'col-12');
+        colResumenEgresos.classList.add('col-6');
+        if (elBadgeNeto) elBadgeNeto.classList.remove('d-none');
     }
+    actualizarEstilosCajasResumen();
 
     // Inyectar lista de registros directamente en lista-historial-agrupado
     const contenedorHistorial = document.getElementById('lista-historial-agrupado');
@@ -1144,18 +2038,19 @@ function renderizarHistorial() {
 window.renderizarEstadisticas = renderizarEstadisticas;
 window.renderizarHistorial = renderizarHistorial;
 
-// --- LISTENERS DE FILTROS EN HISTORIAL FINANCIERO (Corrección Crítica UI) ---
+// --- LISTENERS DE FILTROS EN HISTORIAL FINANCIERO (Controles Consolidados) ---
 function iniciarListenersHistorial() {
     const inputMes = document.getElementById('filtroMesHistorial');
     if (inputMes) {
         inputMes.addEventListener('change', renderizarHistorial);
     }
 
-    const selectTipo = document.getElementById('filtroTipoHistorial');
-    if (selectTipo) {
-        selectTipo.addEventListener('change', renderizarHistorial);
+    const inputBuscador = document.getElementById('buscadorHistorial');
+    if (inputBuscador) {
+        inputBuscador.addEventListener('input', renderizarHistorial);
     }
 
+    actualizarEstilosCajasResumen();
     // Renderizado inicial al arrancar
     renderizarHistorial();
 }
@@ -1992,6 +2887,10 @@ let mesVisualizado = hoy.getMonth() + 1;
 let añoVisualizado = hoy.getFullYear();
 
 function cambiarMes(direccion) {
+    if (direccion > 0) {
+        let esMesActualOSuperior = (añoVisualizado > añoActual) || (añoVisualizado === añoActual && mesVisualizado >= mesActual);
+        if (esMesActualOSuperior) return; // Bloquear avance a meses futuros
+    }
     mesVisualizado += direccion;
     if (mesVisualizado > 12) { mesVisualizado = 1; añoVisualizado++; }
     if (mesVisualizado < 1) { mesVisualizado = 12; añoVisualizado--; }
@@ -2096,16 +2995,22 @@ function procesarMudanza() {
             pagos[pagoIndex].monto = montoAlquilerFinal;
             pagos[pagoIndex].pagado = true; 
             if (!pagos[pagoIndex].metodo) pagos[pagoIndex].metodo = "Liquidación Final";
+            if (!pagos[pagoIndex].id_recibo) pagos[pagoIndex].id_recibo = "REC-" + Date.now().toString().slice(-6);
+            if (!pagos[pagoIndex].fecha_emision) pagos[pagoIndex].fecha_emision = new Date().toLocaleString('es-PE');
         } else {
+            let idBaja = Date.now();
             pagos.push({
-                id: Date.now(),
+                id: idBaja,
+                fecha_pago_real: Date.now(),
                 cliente_id: cliente.id,
                 mes: mesActual,
                 año: añoActual,
                 monto: montoAlquilerFinal,
                 pagado: true,
                 metodo: "Liquidación Final",
-                historico: `${cliente.nombre} ${cliente.apellido || ''}`.trim()
+                historico: `${cliente.nombre} ${cliente.apellido || ''}`.trim(),
+                id_recibo: "REC-" + idBaja.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
         }
 
@@ -2153,6 +3058,7 @@ function procesarMudanza() {
 // --- PROCESAR BORRADO POR ERROR (HARD DELETE) ---
 function procesarEliminacionRastro() {
     let clienteId = parseInt(document.getElementById('baja-cliente-id').value);
+    if (!confirm('¿Estás seguro de que deseas eliminar este cliente y todo su historial de registros? Esta acción no se puede deshacer.')) return;
     
     guardarSnapshot(); // 📸 ¡FOTO TOMADA!
     
@@ -2326,6 +3232,8 @@ function abrirModalEditarCliente(clienteId) {
         document.getElementById('edit-cli-id').value = cliente.id;
         document.getElementById('edit-cli-nombre').value = cliente.nombre;
         document.getElementById('edit-cli-apellido').value = cliente.apellido || '';
+        const inputEditTel = document.getElementById('edit-cli-telefono');
+        if (inputEditTel) inputEditTel.value = cliente.telefono || '';
         document.getElementById('edit-cli-monto').value = cliente.monto;
         document.getElementById('edit-cli-dia').value = cliente.dia;
         const inputEditRef = document.getElementById('edit-cli-ref');
@@ -2351,6 +3259,8 @@ function guardarEdicionCliente(e) {
     let id = parseInt(document.getElementById('edit-cli-id').value);
     let nuevoNombre = document.getElementById('edit-cli-nombre').value.trim();
     let nuevoApellido = document.getElementById('edit-cli-apellido').value.trim();
+    const inputEditTel = document.getElementById('edit-cli-telefono');
+    let nuevoTelefono = inputEditTel ? inputEditTel.value.trim() : '';
     let nuevoMonto = parseFloat(document.getElementById('edit-cli-monto').value);
     let nuevoDia = parseInt(document.getElementById('edit-cli-dia').value);
     const inputEditRef = document.getElementById('edit-cli-ref');
@@ -2365,6 +3275,7 @@ function guardarEdicionCliente(e) {
         // 1. Actualizamos el perfil base del cliente (manteniendo la referencia protegida)
         clientes[cIndex].nombre = nuevoNombre;
         clientes[cIndex].apellido = nuevoApellido;
+        clientes[cIndex].telefono = nuevoTelefono;
         clientes[cIndex].monto = nuevoMonto;
         clientes[cIndex].dia = nuevoDia;
         clientes[cIndex].ref = clientes[cIndex].ref || nuevaRef;
@@ -2400,7 +3311,8 @@ function guardarEdicionCliente(e) {
 
 // --- FUNCIONES PARA ELIMINACIÓN DIRECTA DESDE HISTORIAL (PAPELERAS) ---
 window.eliminarPagoHistorial = function(id) {
-    if (confirm('¿Eliminar registro?')) {
+    if (confirm('¿Estás seguro de que deseas eliminar este registro? Esta acción actualizará tu saldo neto.')) {
+        if (typeof guardarSnapshot === 'function') guardarSnapshot();
         let pagos = JSON.parse(localStorage.getItem('aldia_pagos')) || [];
         pagos = pagos.filter(p => Number(p.id) !== Number(id));
         localStorage.setItem('aldia_pagos', JSON.stringify(pagos));
@@ -2409,7 +3321,8 @@ window.eliminarPagoHistorial = function(id) {
 };
 
 window.eliminarEgresoHistorial = function(id) {
-    if (confirm('¿Eliminar registro?')) {
+    if (confirm('¿Estás seguro de que deseas eliminar este registro? Esta acción actualizará tu saldo neto.')) {
+        if (typeof guardarSnapshot === 'function') guardarSnapshot();
         let egresos = JSON.parse(localStorage.getItem('aldia_egresos')) || [];
         egresos = egresos.filter(e => Number(e.id) !== Number(id));
         localStorage.setItem('aldia_egresos', JSON.stringify(egresos));
@@ -2440,7 +3353,7 @@ const templateCliente = `
     <!-- Bloque 2 (Persona) -->
     <div class="mb-4">
         <label class="form-label text-muted small fw-bold mb-2">Datos de la persona</label>
-        <div class="row g-2">
+        <div class="row g-2 mb-2">
             <div class="col-6">
                 <label class="form-label text-muted small fw-bold" for="cli-nombre">Nombre</label>
                 <input type="text" class="form-control" id="cli-nombre" placeholder="Nombre" required>
@@ -2449,6 +3362,10 @@ const templateCliente = `
                 <label class="form-label text-muted small fw-bold" for="cli-apellido">Apellido</label>
                 <input type="text" class="form-control" id="cli-apellido" placeholder="Apellido">
             </div>
+        </div>
+        <div>
+            <label class="form-label text-muted small fw-bold" for="cli-telefono"><i class="fab fa-whatsapp text-success me-1"></i> WhatsApp / Teléfono (Opcional)</label>
+            <input type="tel" class="form-control" id="cli-telefono" placeholder="Ej: 987654321">
         </div>
     </div>
 
@@ -3426,6 +4343,7 @@ function guardarRegistroUnificado(e) {
 
     const nombre = document.getElementById('cli-nombre') ? document.getElementById('cli-nombre').value.trim() : '';
     const apellido = document.getElementById('cli-apellido') ? document.getElementById('cli-apellido').value.trim() : '';
+    const telefono = document.getElementById('cli-telefono') ? document.getElementById('cli-telefono').value.trim() : '';
     const monto = parseFloat(document.getElementById('cli-monto') ? document.getElementById('cli-monto').value : 0) || 0;
     const selectFrecuencia = document.getElementById('cli-frecuencia');
     const frecuencia = selectFrecuencia ? selectFrecuencia.value : 'mensual';
@@ -3533,6 +4451,7 @@ function guardarRegistroUnificado(e) {
         tipo_servicio: tipoServicio,
         nombre: nombre,
         apellido: apellido,
+        telefono: telefono,
         monto: monto,
         frecuencia: frecuencia,
         duracion_estadia: duracionEstadia,
@@ -3582,8 +4501,9 @@ function guardarRegistroUnificado(e) {
 
         if (modalidad === 'opcion1') {
             // Pago Total de la estadía o periodo
+            let idIngreso1 = Date.now();
             pagos.push({
-                id: Date.now(),
+                id: idIngreso1,
                 cliente_id: idCliente,
                 mes: mesIni,
                 año: anioIni,
@@ -3592,7 +4512,9 @@ function guardarRegistroUnificado(e) {
                 metodo: 'Efectivo',
                 historico: `${nombre} ${apellido}`.trim(),
                 es_garantia: false,
-                fecha_pago_real: Date.now()
+                fecha_pago_real: Date.now(),
+                id_recibo: "REC-" + idIngreso1.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
         } else if ((frecuencia === 'diario' || frecuencia === 'semanal') && modalidad === 'opcion2') {
             // Pago Parcial (Tiempo) en Diario/Semanal
@@ -3601,8 +4523,9 @@ function guardarRegistroUnificado(e) {
             const montoPagado = monto * periodosPagados;
 
             // Registro 1: Ingreso de hoy
+            let idIngreso2 = Date.now();
             pagos.push({
-                id: Date.now(),
+                id: idIngreso2,
                 cliente_id: idCliente,
                 mes: mesIni,
                 año: anioIni,
@@ -3611,7 +4534,9 @@ function guardarRegistroUnificado(e) {
                 metodo: 'Efectivo',
                 historico: `${nombre} ${apellido} (Pago parcial)`.trim(),
                 es_garantia: false,
-                fecha_pago_real: Date.now()
+                fecha_pago_real: Date.now(),
+                id_recibo: "REC-" + idIngreso2.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
 
             // Registro 2 (La Deuda): Periodos restantes
@@ -3641,8 +4566,9 @@ function guardarRegistroUnificado(e) {
             const deudaRestante = Math.max(0, totalCalculado - montoAdelanto);
 
             // Registro 1: El ingreso de hoy (Adelanto)
+            let idIngreso3 = Date.now();
             pagos.push({
-                id: Date.now(),
+                id: idIngreso3,
                 cliente_id: idCliente,
                 mes: mesIni,
                 año: anioIni,
@@ -3651,7 +4577,9 @@ function guardarRegistroUnificado(e) {
                 metodo: 'Efectivo',
                 historico: `${nombre} ${apellido} (Adelanto)`.trim(),
                 es_garantia: false,
-                fecha_pago_real: Date.now()
+                fecha_pago_real: Date.now(),
+                id_recibo: "REC-" + idIngreso3.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
 
             // Registro 2 (La Deuda): Estructura ESTRICTA auditada en Fase 3.2
@@ -3681,8 +4609,9 @@ function guardarRegistroUnificado(e) {
                     mesCobro -= 12;
                     añoCobro++;
                 }
+                let idIngreso4 = Date.now() + i;
                 pagos.push({
-                    id: Date.now() + i,
+                    id: idIngreso4,
                     cliente_id: idCliente,
                     mes: mesCobro,
                     año: añoCobro,
@@ -3691,7 +4620,9 @@ function guardarRegistroUnificado(e) {
                     metodo: 'Efectivo',
                     historico: `${nombre} ${apellido}`.trim(),
                     es_garantia: false,
-                    fecha_pago_real: Date.now()
+                    fecha_pago_real: Date.now(),
+                    id_recibo: "REC-" + idIngreso4.toString().slice(-6),
+                    fecha_emision: new Date().toLocaleString('es-PE')
                 });
             }
         }
@@ -3700,8 +4631,9 @@ function guardarRegistroUnificado(e) {
     // 6. Registro de Garantía en aldia_pagos (si aplica)
     if (tieneGarantia && montoGarantia > 0) {
         if (pagadaGarantia) {
+            let idIngresoGar = Date.now() + 50;
             pagos.push({
-                id: Date.now() + 50,
+                id: idIngresoGar,
                 cliente_id: idCliente,
                 mes: mesIni,
                 año: anioIni,
@@ -3710,7 +4642,9 @@ function guardarRegistroUnificado(e) {
                 metodo: 'Efectivo',
                 historico: `${nombre} (Garantía)`.trim(),
                 es_garantia: true,
-                fecha_pago_real: Date.now()
+                fecha_pago_real: Date.now(),
+                id_recibo: "REC-" + idIngresoGar.toString().slice(-6),
+                fecha_emision: new Date().toLocaleString('es-PE')
             });
         } else {
             pagos.push({
@@ -4298,7 +5232,7 @@ function exportarReporte(formato) {
         mesFiltro = hoy.getMonth() + 1;
     }
 
-    const tipoFiltro = document.getElementById('filtroTipoHistorial') ? document.getElementById('filtroTipoHistorial').value : 'ambos';
+    const tipoFiltro = obtenerTipoFiltroHistorial();
 
     const nombreMesTexto = (typeof meses !== 'undefined' && meses[mesFiltro - 1]) ? meses[mesFiltro - 1] : String(mesFiltro).padStart(2, '0');
 
