@@ -1253,17 +1253,47 @@ async function guardarYCompartirPDFRecibo(doc, nombreArchivo, idRecibo, nombreIn
         const base64Data = dataUri.split(',')[1];
 
         if (Filesystem?.writeFile) {
-            const writeResult = await Filesystem.writeFile({
-                path: nombreArchivo,
-                data: base64Data,
-                directory: 'CACHE'
-            });
+            let writeResult = null;
+            let carpetaDestino = "Descargas";
+
+            // Prioridad 1: Guardar directamente en la carpeta Descargas (Download)
+            try {
+                writeResult = await Filesystem.writeFile({
+                    path: `Download/${nombreArchivo}`,
+                    data: base64Data,
+                    directory: 'EXTERNAL_STORAGE',
+                    recursive: true
+                });
+                carpetaDestino = "Descargas (Download)";
+            } catch (errDownload) {
+                console.warn("Intento en Download/ (EXTERNAL_STORAGE) no disponible, intentando en Documentos:", errDownload);
+                // Prioridad 2: Guardar en Documentos (DOCUMENTS)
+                try {
+                    writeResult = await Filesystem.writeFile({
+                        path: nombreArchivo,
+                        data: base64Data,
+                        directory: 'DOCUMENTS',
+                        recursive: true
+                    });
+                    carpetaDestino = "Documentos";
+                } catch (errDocs) {
+                    console.warn("Intento en DOCUMENTS no disponible, guardando en CACHE:", errDocs);
+                    // Prioridad 3: Guardar en CACHE
+                    writeResult = await Filesystem.writeFile({
+                        path: nombreArchivo,
+                        data: base64Data,
+                        directory: 'CACHE',
+                        recursive: true
+                    });
+                    carpetaDestino = "Almacenamiento Temporal";
+                }
+            }
 
             if (Share?.share && writeResult?.uri) {
                 await Share.share({
                     title: `Comprobante ${idRecibo}`,
-                    text: `Comprobante de pago ${idRecibo} - ${nombreInquilino}`,
-                    dialogTitle: 'Ver / Compartir Comprobante PDF',
+                    text: `Comprobante de pago ${idRecibo} - ${nombreInquilino} (Guardado en ${carpetaDestino})`,
+                    dialogTitle: `Ver / Compartir Comprobante (Guardado en ${carpetaDestino})`,
                     files: [writeResult.uri]
                 });
                 return;
@@ -5337,36 +5367,56 @@ window.confirmarTraslado = confirmarTraslado;
 // --- MOTOR DE EXPORTACIÓN A PDF Y EXCEL (Fase 5.4 - Soporte Híbrido Web y Capacitor Nativo) ---
 // ==========================================
 
-async function guardarYCompartirArchivoReporte(nombreArchivo, base64Data, titulo, texto, dialogTitle) {
+async function guardarArchivoReporteNativo(nombreArchivo, base64Data) {
     try {
         const Filesystem = window.Capacitor?.Plugins?.Filesystem;
-        const Share = window.Capacitor?.Plugins?.Share;
 
         if (Filesystem?.writeFile) {
-            const writeResult = await Filesystem.writeFile({
-                path: nombreArchivo,
-                data: base64Data,
-                directory: 'CACHE',
-                recursive: true
-            });
+            let writeResult = null;
+            let carpetaDestino = "Descargas";
 
-            if (Share?.share && writeResult?.uri) {
-                await Share.share({
-                    title: titulo || nombreArchivo,
-                    text: texto || nombreArchivo,
-                    dialogTitle: dialogTitle || 'Ver / Compartir Reporte',
-                    files: [writeResult.uri]
+            // Prioridad 1: Guardar directamente en la carpeta Descargas (Download)
+            try {
+                writeResult = await Filesystem.writeFile({
+                    path: `Download/${nombreArchivo}`,
+                    data: base64Data,
+                    directory: 'EXTERNAL_STORAGE',
+                    recursive: true
                 });
+                carpetaDestino = "Descargas (Download)";
+            } catch (errDownload) {
+                console.warn("Intento en Download/ (EXTERNAL_STORAGE) no disponible, intentando en Documentos:", errDownload);
+                // Prioridad 2: Guardar en Documentos (DOCUMENTS)
+                try {
+                    writeResult = await Filesystem.writeFile({
+                        path: nombreArchivo,
+                        data: base64Data,
+                        directory: 'DOCUMENTS',
+                        recursive: true
+                    });
+                    carpetaDestino = "Documentos";
+                } catch (errDocs) {
+                    console.warn("Intento en DOCUMENTS no disponible, guardando en CACHE:", errDocs);
+                    // Prioridad 3: Guardar en CACHE
+                    writeResult = await Filesystem.writeFile({
+                        path: nombreArchivo,
+                        data: base64Data,
+                        directory: 'CACHE',
+                        recursive: true
+                    });
+                    carpetaDestino = "Almacenamiento Temporal";
+                }
+            }
+
+            if (writeResult && writeResult.uri) {
+                alert(`✅ Reporte guardado con éxito en tu carpeta de ${carpetaDestino}:\n${nombreArchivo}`);
                 return true;
             }
         }
         return false;
     } catch (err) {
-        const msg = (err && err.message) ? err.message : String(err || '');
-        if (!/cancel/i.test(msg) && err?.name !== 'AbortError') {
-            console.warn("Fallo en compartir nativo de reporte:", err);
-            alert("No se pudo compartir el archivo: " + (err.message || err));
-        }
+        console.warn("Fallo en guardado nativo de reporte:", err);
+        alert("No se pudo guardar el archivo: " + (err.message || err));
         return false;
     }
 }
@@ -5396,8 +5446,7 @@ async function exportarReporte(formato) {
             (
                 (typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) ||
                 (typeof window.Capacitor.getPlatform === 'function' && window.Capacitor.getPlatform() !== 'web') ||
-                Boolean(window.Capacitor.Plugins?.Filesystem) ||
-                Boolean(window.Capacitor.Plugins?.Share)
+                Boolean(window.Capacitor.Plugins?.Filesystem)
             )
         );
 
@@ -5590,14 +5639,8 @@ async function exportarReporte(formato) {
 
             if (isCapacitorNative) {
                 const base64Excel = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
-                const compartido = await guardarYCompartirArchivoReporte(
-                    nombreArchivoExcel,
-                    base64Excel,
-                    `Reporte ${nombreMesTexto} ${anioFiltro}`,
-                    `Reporte Financiero Excel - ${nombreMesTexto} ${anioFiltro}`,
-                    'Ver / Compartir Reporte Excel'
-                );
-                if (!compartido) {
+                const guardado = await guardarArchivoReporteNativo(nombreArchivoExcel, base64Excel);
+                if (!guardado) {
                     XLSX.writeFile(wb, nombreArchivoExcel);
                 }
             } else {
@@ -5738,14 +5781,8 @@ async function exportarReporte(formato) {
             if (isCapacitorNative) {
                 const dataUri = doc.output('datauristring');
                 const base64PDF = dataUri.split(',')[1];
-                const compartido = await guardarYCompartirArchivoReporte(
-                    nombreArchivoPDF,
-                    base64PDF,
-                    `Reporte ${nombreMesTexto} ${anioFiltro}`,
-                    `Reporte Financiero PDF - ${nombreMesTexto} ${anioFiltro}`,
-                    'Ver / Compartir Reporte PDF'
-                );
-                if (!compartido) {
+                const guardado = await guardarArchivoReporteNativo(nombreArchivoPDF, base64PDF);
+                if (!guardado) {
                     doc.save(nombreArchivoPDF);
                 }
             } else {
